@@ -10,9 +10,15 @@ without any native dependency, then runs pygbag.
 and pulls in numpy, neither of which exists in the pygbag runtime.
 
 Usage:
-    python scripts/build_web.py           # vendor, verify, build
-    python scripts/build_web.py --serve   # ...then serve it locally
+    python scripts/build_web.py             # vendor app code, verify, build
+    python scripts/build_web.py --serve     # ...then serve it locally
     python scripts/build_web.py --vendor-only
+
+The runtime is fetched from the pygame-web CDN. `--vendor-runtime` will instead
+download it and serve it same-origin, which removes the third-party code
+dependency - but that path is UNFINISHED: the resulting build does not boot,
+and its URL handling still assumes the 0.9.x `/archives/` layout rather than
+the `/cdn/<version>/` layout 0.9.3 emits. Do not enable it without fixing both.
 """
 
 import argparse
@@ -129,7 +135,14 @@ def _fetch(url: str, target: Path) -> int:
 
 
 def vendor_runtime() -> None:
-    """Download the pygbag runtime so the page loads nothing third-party.
+    """UNFINISHED. Download the pygbag runtime to serve it same-origin.
+
+    Known broken in two ways, both of which must be fixed before this is used:
+      1. The resulting build downloads everything and then fails to boot.
+      2. CDN_BASE below assumes the `/archives/0.9/` layout; pygbag 0.9.3
+         emits `/cdn/0.9.3/`, so the guard in this function will reject it.
+
+    Kept because eliminating the third-party runtime is the right end state.
 
     The runtime is pinned to a version, so it is immutable and can be cached
     for a year - which is what keeps the bandwidth cost of self-hosting ~25 MB
@@ -166,9 +179,10 @@ def main() -> None:
     parser.add_argument("--serve", action="store_true", help="serve locally on :8000")
     parser.add_argument("--vendor-only", action="store_true")
     parser.add_argument(
-        "--cdn",
+        "--vendor-runtime",
         action="store_true",
-        help="leave the runtime on the pygame-web CDN instead of vendoring it",
+        help="UNFINISHED: self-host the runtime instead of using the CDN. The "
+             "resulting build does not currently boot; see module docstring.",
     )
     args = parser.parse_args()
 
@@ -176,7 +190,7 @@ def main() -> None:
     verify()
     if not args.vendor_only:
         build(serve=args.serve)
-        if not args.serve and not args.cdn:
+        if not args.serve and args.vendor_runtime:
             vendor_runtime()
 
 

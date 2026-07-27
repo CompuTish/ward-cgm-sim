@@ -1,0 +1,11 @@
+# Vendored web copy (written by scripts/build_web.py) and pygbag output
+web/ward_cgm_sim/
+web/build/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.DS_Store

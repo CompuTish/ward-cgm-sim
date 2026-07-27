@@ -86,6 +86,10 @@ class AlarmConfig:
     # *event* rather than a transient dip, following the consensus 15-minute
     # definition used for CGM-derived metrics. Three 5-minute steps.
     hypo_event_min_steps: int = 3
+    # Sustained recovery required before an episode is considered over, so a
+    # patient oscillating around the threshold is one event rather than
+    # several. 3 steps = 15 minutes above threshold.
+    hypo_recovery_min_steps: int = 3
     hyper_threshold_default: float = 14.0
     # Patients with chronic uncontrolled hyperglycaemia can be given a higher
     # personal threshold to reduce nuisance alarms (alarm-fatigue lever).
@@ -260,6 +264,12 @@ class UsualCareConfig:
     # every 48-72 five-minute steps, so an unremarkable low is usually only
     # found at the next scheduled check.
     routine_detection_prob: float = 0.02
+    # Probability that deliberately looking at a hypoglycaemic patient reveals
+    # it. Below the severe threshold the patient is taken to be obviously
+    # unwell and this is bypassed. This is what makes CHECK_PATIENT a real
+    # discovery route rather than a no-op, and it is the ONLY route the agent
+    # has when telemetry is switched off.
+    bedside_symptom_recognition: float = 0.65
     # Severe hypoglycaemia is far more likely to be noticed between checks
     # because the patient becomes symptomatic.
     severe_detection_multiplier: float = 3.0

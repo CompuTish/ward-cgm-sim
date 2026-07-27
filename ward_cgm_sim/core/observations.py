@@ -125,8 +125,10 @@ def build_observation(engine) -> list[float]:
         staleness = UNKNOWN
         if cfg.telemetry_enabled and patient.is_enrolled:
             snapshot = engine.dashboard_snapshot.get(bed)
-            if snapshot is not None:
-                seen_value, seen_staleness = snapshot
+            # Identity check: a snapshot taken before this bed changed hands
+            # belongs to the previous occupant and must not be shown.
+            if snapshot is not None and snapshot[0] == patient.patient_id:
+                _pid, seen_value, seen_staleness = snapshot
                 age = engine.step_index - (engine.dashboard_seen_step or 0)
                 if seen_value is not None:
                     cgm_value = min(1.0, seen_value / GLUCOSE_SCALE)

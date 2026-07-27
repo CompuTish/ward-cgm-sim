@@ -306,3 +306,156 @@ def test_eligibility_uses_expected_remaining_stay_not_total():
     patient.steps_on_ward = int(47 * 60 / SimConfig().minutes_per_step)
     assert not patient.expected_los_at_least_48h
     assert patient.expected_remaining_hours == pytest.approx(13.0, abs=0.2)
+
+
+def test_an_unread_alarm_is_not_counted_as_detection():
+    """"Detection" must mean somebody knows, not that a device fired.
+
+    An alarm sitting on a board nobody has looked at is not detection. Counting
+    it would report device latency while claiming to report the time before
+    anybody knew - which was the headline number.
+    """
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0  # isolate the telemetry route
+    # Deterministic low reading so an alarm is guaranteed to be raised.
+    cfg.glucose.reversion_rate = 0.0
+    cfg.glucose.process_noise = 0.0
+    cfg.glucose.meal_prob = 0.0
+    cfg.glucose.insulin_prob = 0.0
+    cfg.glucose.cgm_noise_sd = 0.0
+    cfg.glucose.cgm_bias_sd = 0.0
+    cfg.glucose.cgm_spike_prob = 0.0
+    engine = WardEngine(cfg, seed=21)
+    patient = next(p for p in engine.flow.patients() if p.is_enrolled)
+
+    engine.agent_x, engine.agent_y = 1, 1  # far from the station
+    engine.dashboard_seen_step = None
+    engine.dashboard_snapshot = {}
+    patient.true_glucose = 3.2
+    patient.target_glucose = 3.2
+    patient.glucose_history.extend([3.2] * 6)
+
+    for _ in range(10):
+        engine.step(int(Action.WAIT))
+
+    # POSITIVE CONTROL: an alarm must genuinely have been raised, or this test
+    # proves nothing - "nothing was detected" is trivially true if the device
+    # never fired in the first place.
+    assert engine.kpi["alarms_raised"] > 0, (
+        "positive control failed: no alarm was ever raised"
+    )
+    assert engine.visible_alarms() == [], "the board must remain unread"
+    assert engine.kpi["hypo_detected_by_telemetry"] == 0, (
+        "an alarm nobody has seen was counted as a detection"
+    )
+
+
+def test_checking_a_patient_can_discover_hypoglycaemia():
+    """Bedside checking is a real discovery route, and the only one without
+    telemetry. If it does nothing, the counterfactual arm is monitoring-free
+    rather than routine-monitoring."""
+    cfg = SimConfig()
+    cfg.telemetry_enabled = False
+    cfg.usual_care.routine_detection_prob = 0.0  # isolate the bedside route
+    # Pin the physiology so the patient stays low for the whole test.
+    cfg.glucose.reversion_rate = 0.0
+    cfg.glucose.process_noise = 0.0
+    cfg.glucose.meal_prob = 0.0
+    cfg.glucose.insulin_prob = 0.0
+    cfg.glucose.hypo_episode_prob = 0.0
+    cfg.glucose.hyper_episode_prob = 0.0
+    engine = WardEngine(cfg, seed=22)
+
+    patient = next(engine.flow.patients())
+    patient.true_glucose = 2.5  # severe: taken to be obviously unwell
+    patient.target_glucose = 2.5
+    patient.glucose_history.extend([2.5] * 6)
+    # Enough steps for the episode to meet the 15-minute event definition.
+    for _ in range(4):
+        engine.step(int(Action.WAIT))
+
+    engine.agent_x, engine.agent_y = engine.ward_map.approach_tile(patient.bed)
+    before = engine.kpi["hypo_detected_by_usual_care"]
+    engine.step(int(Action.CHECK_PATIENT))
+
+    assert engine.kpi["hypo_detected_by_usual_care"] > before, (
+        "checking a visibly hypoglycaemic patient discovered nothing"
+    )
+
+
+def test_one_episode_is_not_split_by_a_single_recovered_reading():
+    """3.5, 3.5, 4.0, 3.5 is one episode, not two."""
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0
+    engine = WardEngine(cfg, seed=23)
+    patient = next(engine.flow.patients())
+
+    trace = [3.5, 3.5, 3.5, 4.0, 3.5, 3.5, 3.5]
+    for value in trace:
+        patient.true_glucose = value
+        engine._track_hypo_episode(patient)
+        engine.step_index += 1
+
+    assert engine.kpi["hypo_episodes"] == 1, (
+        f"a brief recovery split one episode into "
+        f"{engine.kpi['hypo_episodes']}"
+    )
+
+
+def test_sustained_recovery_does_end_an_episode():
+    """Positive counterpart: a real recovery must close the episode."""
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0
+    engine = WardEngine(cfg, seed=23)
+    patient = next(engine.flow.patients())
+
+    for value in [3.5, 3.5, 3.5] + [6.0] * 6 + [3.5, 3.5, 3.5]:
+        patient.true_glucose = value
+        engine._track_hypo_episode(patient)
+        engine.step_index += 1
+
+    assert engine.kpi["hypo_episodes"] == 2, "sustained recovery should close it"
+
+
+def test_acknowledging_an_alarm_without_confirming_it_is_penalised():
+    """Silencing the board is not responding to it.
+
+    The agent acknowledges every alarm the moment it appears but never runs a
+    point-of-care test. That must still accrue a penalty, or the cheapest
+    policy is to clear the board and walk away.
+    """
+    cfg = SimConfig()
+    # Hold the patient genuinely low so alarms keep being raised.
+    cfg.glucose.reversion_rate = 0.0
+    cfg.glucose.process_noise = 0.0
+    cfg.glucose.meal_prob = 0.0
+    cfg.glucose.insulin_prob = 0.0
+    cfg.usual_care.routine_detection_prob = 0.0
+    # Silence the sensor noise too, so the alarm cannot flicker back in range
+    # and auto-resolve before the deadline is reached.
+    cfg.glucose.cgm_noise_sd = 0.0
+    cfg.glucose.cgm_bias_sd = 0.0
+    cfg.glucose.cgm_spike_prob = 0.0
+    engine = WardEngine(cfg, seed=24)
+
+    patient = next(p for p in engine.flow.patients() if p.is_enrolled)
+    patient.true_glucose = 3.3
+    patient.target_glucose = 3.3
+    patient.glucose_history.extend([3.3] * 6)
+
+    raised_any = False
+    for _ in range(30):
+        # Acknowledge whatever is on the board, but never confirm it.
+        for alarm in engine.active_alarms.values():
+            if alarm.acknowledged_step is None:
+                alarm.acknowledged_step = engine.step_index
+                raised_any = True
+        _o, _r, terminated, truncated, info = engine.step(int(Action.WAIT))
+        if terminated or truncated:
+            break
+
+    assert raised_any, "positive control: an alarm must actually have been raised"
+    assert info["kpi"]["unconfirmed_alarm_steps"] > 0, (
+        "an acknowledged but unconfirmed alarm accrued no penalty"
+    )
+    assert info["reward_components"].get("unconfirmed_significant_alarm", 0.0) < 0

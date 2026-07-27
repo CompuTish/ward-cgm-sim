@@ -94,8 +94,8 @@ class WardEngine:
         self.alarm_log: list[Alarm] = []
         self.last_alarm_step: dict[tuple[int, AlarmKind], int] = {}
         self.dashboard_seen_step: int | None = None
-        # bed -> (cgm value, staleness) as of the last time the board was read.
-        self.dashboard_snapshot: dict[int, tuple[float | None, int]] = {}
+        # bed -> (patient_id, cgm value, staleness) at the last board read.
+        self.dashboard_snapshot: dict[int, tuple[int, float | None, int]] = {}
         self.event_log: list[str] = []
         self._discharged_seen = 0  # how far through flow.discharged we've processed
         self.terminated = False
@@ -192,8 +192,15 @@ class WardEngine:
         the whole reason the board has a location.
         """
         self.dashboard_seen_step = self.step_index
+        # Keyed by bed but stamped with patient identity: beds get reused, and
+        # showing a new admission the previous occupant's glucose would be a
+        # particularly nasty way to be wrong.
         self.dashboard_snapshot = {
-            patient.bed: (patient.last_cgm_value, patient.steps_since_valid_cgm)
+            patient.bed: (
+                patient.patient_id,
+                patient.last_cgm_value,
+                patient.steps_since_valid_cgm,
+            )
             for patient in self.flow.patients()
             if patient.is_enrolled
         }
@@ -399,6 +406,24 @@ class WardEngine:
             return
         k = patient.knowledge
         k.last_checked_step = self.step_index
+
+        # Looking at a patient is a real discovery route, and the only one the
+        # agent has when telemetry is off. A hypoglycaemic patient at the
+        # bedside is often visibly unwell - sweating, drowsy, confused - and
+        # more obviously so the lower they are.
+        ac = self.cfg.alarms
+        uc = self.cfg.usual_care
+        if patient.true_glucose < ac.hypo_threshold:
+            noticed = (
+                patient.true_glucose < ac.severe_hypo_threshold
+                or patient.rng_care.random() < uc.bedside_symptom_recognition
+            )
+            if noticed:
+                self._record_hypo_detection(patient, "usual_care")
+                self.last_action_result = (
+                    f"bed {patient.bed} looks unwell - check their glucose"
+                )
+                return
         # A bedside check reveals obvious discharge readiness and symptoms, and
         # in a no-telemetry world it is the ONLY way to notice a low patient.
         k.discharge_reviewed_step = self.step_index
@@ -733,6 +758,7 @@ class WardEngine:
         below = patient.true_glucose < ac.hypo_threshold
 
         if below:
+            patient.hypo_recovery_steps = 0
             if patient.hypo_episode_started_step is None:
                 patient.hypo_episode_started_step = self.step_index
                 patient.hypo_episode_detected = False
@@ -755,24 +781,34 @@ class WardEngine:
                 if patient.hypo_episode_detected:
                     self._bank_hypo_detection(patient)
         else:
-            patient.hypo_episode_started_step = None
-            patient.hypo_episode_detected = False
-            patient.hypo_episode_counted = False
-            patient.hypo_episode_detected_step = None
-            patient.hypo_episode_detected_route = None
+            # An episode ends only after SUSTAINED recovery. A single reading
+            # back above threshold does not end it - otherwise a patient
+            # hovering at 3.5, 4.0, 3.5 is counted as two separate events when
+            # clinically it is plainly one.
+            patient.hypo_recovery_steps += 1
+            if patient.hypo_recovery_steps >= ac.hypo_recovery_min_steps:
+                patient.hypo_episode_started_step = None
+                patient.hypo_episode_detected = False
+                patient.hypo_episode_counted = False
+                patient.hypo_episode_detected_step = None
+                patient.hypo_episode_detected_route = None
+                patient.hypo_recovery_steps = 0
+            return
 
         if not below or patient.hypo_episode_detected:
             return
 
-        # Telemetry counts as detection the moment an alarm is visible on the
-        # board for this patient - the information exists, even if the agent
-        # has not yet walked over.
+        # Telemetry counts as detection only when the alarm has actually been
+        # SEEN. An alarm sitting on an unread board is not detection: nobody
+        # knows. Measuring from alarm generation instead would report device
+        # latency while claiming to report "time before anybody knows".
         alarm = self.active_alarms.get(patient.bed)
         if (
             self.cfg.telemetry_enabled
             and alarm is not None
             and alarm.resolved_step is None
             and alarm.kind in (AlarmKind.HYPO, AlarmKind.SEVERE_HYPO)
+            and any(a is alarm for a in self.visible_alarms())
         ):
             self._record_hypo_detection(patient, "telemetry")
 

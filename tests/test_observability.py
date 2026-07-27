@@ -204,3 +204,105 @@ def test_rule_based_policy_reads_the_dashboard():
     assert engine.dashboard_seen_step is not None, (
         "the policy never read the telemetry board, so it is flying blind"
     )
+
+
+# ---------------------------------------------------------------------------
+# Behavioural fairness: identical observable state must produce identical acts
+# ---------------------------------------------------------------------------
+
+def _policy_action_with_hidden_mutation(mutate):
+    """Run two identical engines, mutate hidden state in one, compare actions.
+
+    Stronger than the substring check above: a policy could read hidden state
+    through an alias the denylist misses, and this would still catch it.
+    """
+    base = WardEngine(SimConfig(), seed=11)
+    variant = WardEngine(SimConfig(), seed=11)
+
+    # Let both settle so there is real state to differ over.
+    agent_a, agent_b = RuleBasedAgent(), RuleBasedAgent()
+    agent_a.reset()
+    agent_b.reset()
+    for _ in range(30):
+        base.step(agent_a.act(base))
+        variant.step(agent_b.act(variant))
+
+    assert base.observation() == variant.observation(), (
+        "positive control: the two engines must start observationally identical"
+    )
+
+    mutated = mutate(variant)
+    assert mutated, "positive control: the mutation must actually have applied"
+
+    assert base.observation() == variant.observation(), (
+        "the mutation changed the OBSERVATION, so this is not a hidden-state "
+        "test - pick a genuinely hidden field"
+    )
+    return agent_a.act(base), agent_b.act(variant)
+
+
+def test_policy_ignores_true_glucose():
+    def mutate(engine):
+        for patient in engine.flow.patients():
+            if not patient.is_enrolled:
+                patient.true_glucose = 2.1
+                return True
+        return False
+
+    a, b = _policy_action_with_hidden_mutation(mutate)
+    assert a == b, "the policy reacted to a patient's true glucose"
+
+
+def test_policy_ignores_which_particular_roles_are_free():
+    """Swap WHICH roles are available while holding the count constant.
+
+    Setting them all busy would change the coarse availability figure, which is
+    legitimately observable - the positive control in the helper rejects that.
+    What must not leak is which specific role is free.
+    """
+    def mutate(engine):
+        roles = list(engine.staff.available)
+        states = [engine.staff.available[r] for r in roles]
+        if len(set(states)) < 2:
+            return False  # nothing to swap; helper will flag it
+        for role, state in zip(roles, reversed(states)):
+            engine.staff.available[role] = state
+        return True
+
+    a, b = _policy_action_with_hidden_mutation(mutate)
+    assert a == b, "the policy reacted to which particular staff role was free"
+
+
+def test_policy_ignores_an_individualised_alarm_threshold():
+    def mutate(engine):
+        for patient in engine.flow.patients():
+            if patient.is_enrolled:
+                patient.individualised_hyper_threshold = 25.0
+                return True
+        return False
+
+    a, b = _policy_action_with_hidden_mutation(mutate)
+    assert a == b, "the policy reacted to a hidden individualised threshold"
+
+
+def test_dashboard_snapshot_is_not_shown_to_the_next_occupant_of_a_bed():
+    """A bed changing hands must not carry the old patient's glucose over."""
+    engine = WardEngine(SimConfig(), seed=12)
+    bed = enrolled_bed(engine)
+    # One step first so the sensor has actually produced a reading to snapshot.
+    engine.step(int(Action.WAIT))
+    engine.step(int(Action.CHECK_DASHBOARD))
+    assert bed_feature(engine, bed, CGM_INDEX) != UNKNOWN, (
+        "positive control: the original occupant's value must be visible"
+    )
+
+    # Swap in a different enrolled patient at the same bed.
+    newcomer = next(
+        p for p in engine.flow.patients() if p.is_enrolled and p.bed != bed
+    )
+    engine.flow.beds[bed] = newcomer
+    newcomer.bed = bed
+
+    assert bed_feature(engine, bed, CGM_INDEX) == UNKNOWN, (
+        "the new occupant was shown the previous patient's glucose reading"
+    )

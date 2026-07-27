@@ -53,8 +53,6 @@ AGENTS = {"random": RandomAgent, "rule_based": RuleBasedAgent}
 # large majority of patients who are never eligible for telemetry at all, and
 # so understate any effect.
 OUTCOMES = [
-    ("cohort_mean_detection_delay_steps", "PRIMARY  detection delay, cohort (steps)", True),
-    ("cohort_detection_rate", "PRIMARY  episodes detected, cohort (rate)", False),
     ("cohort_time_below_range_steps", "cohort time below range (patient-steps)", True),
     ("cohort_severe_hypo_events", "cohort severe hypo events", True),
     ("cohort_hypo_episodes", "cohort hypo episodes (denominator)", None),
@@ -103,6 +101,20 @@ def mean_of(results: list[dict], key: str) -> float | None:
     return statistics.mean(values) if values else None
 
 
+def pooled_ratio(results: list[dict], numerator: str, denominator: str) -> float | None:
+    """Event-level pooling: sum numerators, sum denominators, then divide.
+
+    Averaging per-shift ratios and discarding shifts with a zero denominator
+    silently compares different subsets of shifts between the two arms - the
+    telemetry arm had far more shifts with a detected episode, so the
+    macro-average was computed over a different (and better) set of shifts than
+    the comparator's. Pooling uses every episode in both arms.
+    """
+    total_n = sum(r.get(numerator) or 0 for r in results)
+    total_d = sum(r.get(denominator) or 0 for r in results)
+    return total_n / total_d if total_d else None
+
+
 def fmt(value: float | None) -> str:
     return "     n/a" if value is None else f"{value:8.2f}"
 
@@ -127,10 +139,42 @@ def main() -> None:
     telemetry_off = [run_episode(agent_cls, off_cfg, s) for s in seeds]
 
     print(f"\nCGM telemetry vs routine monitoring - {args.agent} policy, "
-          f"{args.episodes} matched shifts")
+          f"{args.episodes} matched shifts, seed {args.seed}")
     print("(academic simulation model; not evidence of clinical benefit)\n")
-    print(f"{'outcome':34s} {'telemetry':>9s} {'routine':>9s} {'difference':>11s}")
-    print("-" * 66)
+
+    # ---- Primary outcomes, pooled at the event level ----------------------
+    print("PRIMARY OUTCOMES (monitored cohort, pooled over all episodes)")
+    print(f"{'  outcome':40s} {'telemetry':>9s} {'routine':>9s}")
+    print("  " + "-" * 60)
+
+    for label, num, den in (
+        ("detection rate", "cohort_hypo_detections", "cohort_hypo_episodes"),
+        (
+            "detection delay | detected (steps)",
+            "cohort_detection_delay_steps_total",
+            "cohort_hypo_detections",
+        ),
+    ):
+        on = pooled_ratio(telemetry_on, num, den)
+        off = pooled_ratio(telemetry_off, num, den)
+        print(f"  {label:38s} {fmt(on)} {fmt(off)}")
+
+    on_ep = sum(r.get("cohort_hypo_episodes") or 0 for r in telemetry_on)
+    off_ep = sum(r.get("cohort_hypo_episodes") or 0 for r in telemetry_off)
+    on_det = sum(r.get("cohort_hypo_detections") or 0 for r in telemetry_on)
+    off_det = sum(r.get("cohort_hypo_detections") or 0 for r in telemetry_off)
+    print(f"  {'episodes / detected (counts)':38s} "
+          f"{on_ep:4d}/{on_det:<4d} {off_ep:4d}/{off_det:<4d}")
+    print(
+        "\n  Delay is CONDITIONAL ON DETECTION and is therefore censored: an\n"
+        "  episode nobody ever found contributes no delay at all. Read it\n"
+        "  together with the detection rate, never on its own - an arm that\n"
+        "  detects only the most obvious events will look deceptively fast.\n"
+    )
+
+    print("SECONDARY OUTCOMES (per-shift means)")
+    print(f"{'  outcome':34s} {'telemetry':>9s} {'routine':>9s} {'difference':>11s}")
+    print("  " + "-" * 64)
 
     for key, label, lower_better in OUTCOMES:
         on_value = mean_of(telemetry_on, key)
@@ -146,7 +190,7 @@ def main() -> None:
                 improved = delta < 0 if lower_better else delta > 0
                 marker = " +" if improved else " -"
             diff = f"{delta:+9.2f}{marker}"
-        print(f"{label:34s} {fmt(on_value)} {fmt(off_value)} {diff:>11s}")
+        print(f"  {label:34s} {fmt(on_value)} {fmt(off_value)} {diff:>11s}")
 
     print("\n  '+' marks the arm-difference favouring telemetry on that outcome.")
     print("  Detection delay and detection rate are the primary outcomes; the rest")

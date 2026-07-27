@@ -295,7 +295,7 @@ class WardRenderer:
             lines = (
                 ["no active alarms"]
                 if at_station
-                else ["walk to the nurse station", "to read the board"]
+                else ["press D to check the board", "(or stand at the station)"]
             )
             for line in lines:
                 self.surface.blit(self.font_small.render(line, True, TEXT_DIM), (x0 + pad, y))

@@ -82,10 +82,19 @@ true glucose, true discharge readiness, hypoglycaemia and hyperglycaemia risk,
 sensor accuracy and bias, whether the insulin regimen has changed, whether the
 patient has become ineligible, and whether a given staff role is actually free.
 
-The **telemetry dashboard is positional**: alarms are visible while standing at
-the nurse station, or from anywhere for alarms raised before the last
-`CHECK_DASHBOARD`. Walking away and never looking back means never learning
-that somebody is alarming.
+**Glucose comes from a snapshot, not a live feed.** Telemetry is pushed to a
+handheld as well as the central monitor, so `CHECK_DASHBOARD` works anywhere —
+but it costs a step, and what it returns is a picture of the board *at that
+moment* which then ages. Standing at the nurse station refreshes it for free.
+An agent that never checks has no glucose information at all; one that checked
+ten minutes ago is working from ten-minute-old numbers.
+
+(An earlier version required physical presence at the station to read the
+board. It was abandoned because it made the comparison null rather than
+realistic: the policy spent the shift walking back and forth and treated almost
+nobody, so both arms collapsed to usual care. The handheld model preserves the
+thing that matters — information costs a step and decays — without that
+artefact.)
 
 ## 4. Action space
 
@@ -94,7 +103,8 @@ that somebody is alarming.
 **Movement (4)** — `MOVE_UP/DOWN/LEFT/RIGHT`, one tile per step.
 
 **Interactions (20)** — applied to the bed the agent is standing next to;
-dashboard actions require the nurse station.
+`CHECK_DASHBOARD` works from anywhere but costs a step and yields a snapshot
+that ages (see above).
 
 | Action | Effect |
 |---|---|
@@ -333,48 +343,67 @@ designing a real study.
 
 ## 14. Calibration and limitations
 
-**The population is deliberately signal-enriched and is not an epidemiological
-model of a real ward.** This is the most important caveat in the document.
+**No parameter in this model is derived from primary data.** Every value in
+`config.py` was chosen to make the simulation behave plausibly and to make the
+mechanism observable in a tractable number of episodes. They are starting
+points for sensitivity analysis, not estimates.
 
-| Parameter | Model | A real acute ward | Why |
-|---|---|---|---|
-| Diabetes prevalence | 45% | ~20% | Enriched for signal density |
-| On ≥2 insulin injections/day | 72% of those | ~30% of those | Enriched |
-| Eligible patients per 32 beds | ~4–5 | ~1–2 | Consequence of the above |
-| Length of stay | Conditional on insulin status | Correlated in reality too | Resolves a real tension (below) |
-| Severe hypoglycaemia | ~2 events/shift | Far rarer | Follows from the enriched cohort |
+**Before this model is used to inform any real study design, the following
+inputs must be replaced with sourced estimates** — from local ward audit data
+where possible, otherwise from published inpatient diabetes literature:
 
-With a realistic population, one or two eligible patients per ward produce
-almost no events in a 12-hour shift, and any arm difference would be swamped by
-noise at any tractable number of episodes. The cohort is therefore enriched so
-the *mechanism* is observable.
+| Input | Where it lives | Why it matters |
+|---|---|---|
+| Diabetes prevalence among inpatients | `patients.diabetes_prevalence` | Sets the size of the eligible pool |
+| Proportion on ≥2 insulin injections/day | `patients.prob_two_or_more_injections_if_diabetic` | Sets it again, multiplicatively |
+| Length-of-stay distribution, by insulin status | `patients.los_hours_range*` | Determines who meets the 48-hour criterion |
+| Inpatient hypoglycaemia incidence | `glucose.hypo_episode_prob`, `hypo_risk_range*` | Sets the event rate, and therefore all power |
+| Routine (non-CGM) detection latency | `usual_care.routine_detection_prob` | **The single most influential parameter**: it defines how good the comparator is, and therefore the entire effect size |
+| Bedside symptom recognition | `usual_care.bedside_symptom_recognition` | The other non-telemetry discovery route |
+| Sensor accuracy: MARD, bias, lag | `glucose.cgm_*` | Should come from the specific device being modelled |
 
-**Consequence for interpretation: absolute rates from this model are not
-estimates of real-ward incidence.** Only the *contrast* between the telemetry
-and routine-monitoring arms is meaningful, and even that is a statement about
-the model, not about patients.
+**The population as configured is deliberately signal-enriched.** Diabetes
+prevalence, the proportion on multiple daily insulin injections, and
+hypoglycaemia risk are all set higher than a general acute ward would show, for
+one reason: with realistic values the eligible cohort is one or two patients
+and produces almost no events in a 12-hour shift, so any arm difference is
+swamped by noise. The enrichment makes the *mechanism* visible.
 
-**Length of stay is drawn conditional on insulin status.** Insulin-treated
-inpatients genuinely have longer admissions, and modelling that resolves a
-tension that would otherwise be unresolvable: a uniformly long-stay ward gives
-a workable telemetry cohort but almost no discharges, while a uniformly
-short-stay ward turns over briskly and leaves nobody eligible for enrolment.
+**Consequently, absolute rates from this model are not incidence estimates and
+must never be quoted as such.** Only the contrast between arms is interpretable,
+and even that is a statement about the model rather than about patients.
 
-**Other parameters that carry real uncertainty and should be varied in any
-sensitivity analysis:**
+**Length of stay and hypoglycaemia risk are drawn conditional on insulin
+status.** The direction of both associations is well established — insulin-
+treated inpatients tend to stay longer and are the group at risk of
+hypoglycaemia — but the *magnitudes* used here are assumptions, not estimates.
+Modelling the association also resolves a tension that is otherwise
+unresolvable: a uniformly long-stay ward gives a workable telemetry cohort but
+almost no discharges, while a uniformly short-stay ward turns over briskly and
+leaves nobody eligible.
 
-- `usual_care.routine_detection_prob` (0.02/step) — the single most influential
-  parameter in the whole comparison. It sets how good the comparator is, and
-  therefore the size of any telemetry effect. It is a smooth per-step hazard
-  standing in for what is really a *scheduled* round; modelling actual 4–6
-  hourly checks would change the shape of the detection-delay distribution.
-- `alarms.persistence_readings` and `false_alarm_margin` — trade alarm burden
-  against detection latency directly.
-- `glucose.cgm_noise_sd`, `cgm_bias_sd`, `cgm_lag_steps` — sensor performance,
-  which should be set from the accuracy data of whichever device is being
-  modelled rather than left at these placeholder values.
-- `patients.initial_enrolled_fraction` — how much of the cohort is inherited at
-  handover versus recruited during the shift.
+**Two further modelling choices worth challenging:**
+
+- `usual_care.routine_detection_prob` is a smooth per-step hazard standing in
+  for what is really a *scheduled* observation round. Modelling actual 4–6
+  hourly checks would change the shape of the detection-delay distribution,
+  not just its mean, and would likely widen the gap between arms at some times
+  of day and close it at others.
+- `alarms.persistence_readings` and `false_alarm_margin` trade alarm burden
+  against detection latency directly, and neither is calibrated.
+
+**Analysis caveats.**
+
+- Detection delay is **conditional on detection** and therefore censored: an
+  episode nobody ever found contributes no delay. It must be read alongside
+  the detection rate. An arm that only ever finds the most obvious events will
+  look deceptively fast.
+- Outcomes are pooled at the **event level** across shifts. Averaging per-shift
+  ratios and dropping shifts with no events compares different subsets of
+  shifts between arms, because the telemetry arm has events on more shifts.
+- Episode counts differ slightly between arms by construction, because
+  successful treatment prevents episodes. That is a real effect, not an
+  imbalance, but it means the denominators are not identical.
 
 **Known simplifications.** Glucose is a single scalar with no insulin
 pharmacokinetics; treatment effects are fixed ramps rather than dose-dependent;

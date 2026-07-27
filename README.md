@@ -54,7 +54,8 @@ python -m pytest
 ### Controls
 
 Arrow keys or WASD to walk. Bedside actions apply to the bed you are standing
-next to; the dashboard needs you at the nurse station.
+next to. Checking the dashboard works anywhere but costs a step, and what you
+learn goes stale; standing at the nurse station refreshes it for free.
 
 `D` dashboard · `C` check patient · `N` notes · `K` consent · `E` enrol ·
 `R` review eligibility · `X` de-enrol · `SPACE` respond to alarm ·
@@ -99,22 +100,29 @@ ward flow.
 
 ### What it currently shows
 
-Rule-based policy, 60 matched shifts, `--seed 0`, default configuration:
+Rule-based policy, 60 matched shifts, `--seed 0`, default configuration.
+Outcomes are pooled at the event level across shifts:
 
 | Outcome (monitored cohort) | Telemetry | Routine monitoring |
 |---|---|---|
-| Hypoglycaemia detection delay | 3.2 steps (~16 min) | 7.2 steps (~36 min) |
-| Episodes detected | 88% | 25% |
+| Episodes detected | 74% (23/31) | 33% (10/30) |
+| Detection delay, given detected | 4.9 steps (~24 min) | 10.8 steps (~54 min) |
 
-Ward-wide, the same effect is far smaller (7.6 vs 8.3 steps), and that gap is
-itself the interesting part: only about one patient in seven meets the
-eligibility criteria, so a large within-cohort improvement dilutes to very
-little at ward level. Any real study would need to be powered for the cohort,
-not the ward — and would have to decide whether a ward-level effect is the
-right thing to look for at all.
+Read those two rows together, never separately. Delay is **conditional on
+detection** and therefore censored — an episode nobody ever found contributes
+no delay at all, so an arm that only catches the most obvious events looks
+deceptively fast.
+
+Ward-wide the same effect nearly vanishes, and that is the more interesting
+result: only about one patient in seven meets the eligibility criteria, so a
+large within-cohort improvement dilutes to very little at ward level. A real
+study would need to be powered for the cohort, and would have to decide whether
+a ward-level effect is the right thing to look for at all.
 
 These are model outputs on a deliberately signal-enriched population, not
-predictions. See "Calibration and limitations" in `docs/POMDP.md`.
+predictions, and **no parameter here is derived from primary data**. See
+"Calibration and limitations" in `docs/POMDP.md` for what must be sourced
+before this informs any real study design.
 
 This is a simulation study of a workflow model. It cannot demonstrate clinical
 benefit — it can show whether a mechanism plausibly produces one, and which

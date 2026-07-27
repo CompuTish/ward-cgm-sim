@@ -41,19 +41,32 @@ class RuleBasedAgent:
 
     def __init__(self, seed: int | None = None):
         self.target_bed: int | None = None
+        # The policy's own memory of alarms it has seen, per bed. Used instead
+        # of the engine's full alarm log, which includes alarms raised while
+        # the agent was not looking.
+        self.alarms_seen: dict[int, int] = {}
 
     def reset(self) -> None:
         self.target_bed = None
+        self.alarms_seen = {}
+
+    def _note_seen_alarms(self, alarms) -> None:
+        for alarm in alarms:
+            key = (alarm.bed, alarm.raised_step)
+            if key not in getattr(self, "_seen_keys", set()):
+                if not hasattr(self, "_seen_keys"):
+                    self._seen_keys = set()
+                self._seen_keys.add(key)
+                self.alarms_seen[alarm.bed] = self.alarms_seen.get(alarm.bed, 0) + 1
 
     # ------------------------------------------------------------------
     def act(self, engine) -> int:
         goal = self._choose_goal(engine)
 
-        # Keep the picture of the telemetry board fresh. The board is a monitor
-        # at the nurse station, so this means physically walking back to it -
-        # which is the cost the layout is there to impose. Deliberately NOT
-        # allowed to interrupt an alarm response: you do not walk away from a
-        # patient you are assessing to go and look at a screen.
+        # Keep the picture of the telemetry board fresh. Checking works from
+        # anywhere but costs a step, so this is a real trade-off against doing
+        # something else. Deliberately NOT allowed to interrupt an alarm
+        # response: you do not stop assessing a patient to look at a screen.
         if goal is None or goal[1] != "alarm":
             if self._dashboard_is_stale(engine):
                 return Action.CHECK_DASHBOARD
@@ -81,9 +94,11 @@ class RuleBasedAgent:
     def _choose_goal(self, engine) -> tuple[int, str] | None:
         # An alarm can only be acted on if the patient is actually in the bed;
         # chasing somebody who is in theatre just burns the shift.
+        visible = engine.visible_alarms()
+        self._note_seen_alarms(visible)
         alarms = [
             a
-            for a in engine.visible_alarms()
+            for a in visible
             if (p := engine.flow.patient_at_bed(a.bed)) is not None and p.visible_at_bed
         ]
 
@@ -106,10 +121,14 @@ class RuleBasedAgent:
             else None
         )
         if board_age is not None:
-            for bed, (_value, seen_staleness) in engine.dashboard_snapshot.items():
+            for bed, (pid, _value, seen_staleness) in engine.dashboard_snapshot.items():
                 if seen_staleness + board_age > grace:
                     patient = engine.flow.patient_at_bed(bed)
-                    if patient is not None and patient.is_enrolled:
+                    if (
+                        patient is not None
+                        and patient.is_enrolled
+                        and patient.patient_id == pid
+                    ):
                         return bed, "sensor"
 
         # Bed pressure outranks enrolment paperwork: a queue that reaches the
@@ -187,7 +206,8 @@ class RuleBasedAgent:
             return Action.WAIT
 
         if intent == "alarm":
-            alarm = engine.active_alarms.get(bed)
+            # Only alarms the agent can actually see, not the engine's full set.
+            alarm = next((a for a in engine.visible_alarms() if a.bed == bed), None)
             if alarm is None:
                 return Action.CHECK_PATIENT
             if alarm.acknowledged_step is None:
@@ -201,8 +221,10 @@ class RuleBasedAgent:
             if poc is None:
                 return Action.POC_GLUCOSE_TEST
             if poc < ac.severe_hypo_threshold:
-                # Severe: escalate as well as treat.
-                if engine._is_recurrent(patient):
+                # Severe: escalate if this patient has alarmed repeatedly.
+                # Counted from what the agent itself has seen, not the engine's
+                # complete log - which includes alarms raised unobserved.
+                if self.alarms_seen.get(bed, 0) >= 2:
                     return Action.ESCALATE
                 return Action.TREAT_HYPO
             if poc < ac.hypo_threshold:

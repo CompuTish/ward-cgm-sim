@@ -332,8 +332,8 @@ events, incident-free shift rate, alarm burden and false-alarm rate, enrolment
 precision and recall, discharge delay, queue length, overcrowding.
 
 A hypoglycaemic **event** is defined here as at least 15 minutes (3 steps)
-below threshold - a rule of this shape is common in CGM metric work, but it is
-used here as a configurable modelling definition, not a cited standard. Without that, every transient dip inflates the
+below threshold. That is a configurable model definition chosen for this
+simulation; it carries no external authority. Without that, every transient dip inflates the
 denominator and the detection rate becomes meaningless.
 
 **What this can and cannot show.** It is a simulation study of a workflow
@@ -363,12 +363,13 @@ where possible, otherwise from published inpatient diabetes literature:
 | Bedside symptom recognition | `usual_care.bedside_symptom_recognition` | The other non-telemetry discovery route |
 | Sensor accuracy: MARD, bias, lag | `glucose.cgm_*` | Should come from the specific device being modelled |
 
-**The population as configured is deliberately signal-enriched.** Diabetes
-prevalence, the proportion on multiple daily insulin injections, and
-hypoglycaemia risk are all set higher than a general acute ward would show, for
-one reason: with lower values the eligible cohort becomes small enough that it
-produces almost no events in a 12-hour shift, so any arm difference is swamped
-by noise. The enrichment makes the *mechanism* visible. How small a
+**The population is configured to increase the number of eligible patients and
+the number of events.** Diabetes prevalence, the proportion on multiple daily
+insulin injections, and hypoglycaemia risk are all set high for one reason:
+with lower values the eligible cohort becomes small enough that it produces
+almost no events in a 12-hour shift, so any arm difference is swamped by noise.
+These settings make the *mechanism* visible; they are not claims about any real
+population. How small a
 realistic cohort would actually be is itself an unsourced guess.
 
 **Consequently, absolute rates from this model are not incidence estimates and

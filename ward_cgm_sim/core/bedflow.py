@@ -65,7 +65,9 @@ class WardFlow:
         for bed in beds[:n_occupied]:
             patient = self._new_patient(bed, 0)
             # Existing patients are already part-way through their stay, spread
-            # uniformly through it so that a realistic share are near discharge.
+            # uniformly through it so that some are near discharge. Uniform
+            # positioning is an assumption of convenience, not a sourced
+            # distribution.
             expected_steps = patient.expected_los_hours * 60 / self.cfg.minutes_per_step
             patient.steps_on_ward = int(self.rng.uniform(0.0, expected_steps))
             self._maybe_enrol_at_handover(patient, pc)

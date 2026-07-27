@@ -80,11 +80,16 @@ class GlucoseConfig:
 class AlarmConfig:
     """CGM alarm thresholds and rate-of-change rules."""
 
-    hypo_threshold: float = 3.9  # mmol/L, standard inpatient hypoglycaemia cut-off
+    # Modelling definitions, not clinical standards. These values are widely
+    # used in CGM work, but nothing here has been checked against a source
+    # and they are configurable precisely so a researcher can substitute the
+    # definitions their own protocol uses.
+    hypo_threshold: float = 3.9  # mmol/L
     severe_hypo_threshold: float = 3.0  # stronger safety penalty below this
     # Minimum time below threshold for something to count as a hypoglycaemic
-    # *event* rather than a transient dip, following the consensus 15-minute
-    # definition used for CGM-derived metrics. Three 5-minute steps.
+    # *event* rather than a transient dip. Three 5-minute steps. A 15-minute
+    # rule of this shape is common in CGM metric work; treat it here as a
+    # configurable modelling definition rather than a cited standard.
     hypo_event_min_steps: int = 3
     # Sustained recovery required before an episode is considered over, so a
     # patient oscillating around the threshold is one event rather than
@@ -160,9 +165,10 @@ class PatientConfig:
     prob_has_capacity: float = 0.88
     prob_consents_if_asked: float = 0.82
 
-    # Length of stay in hours; >=48h is required for enrolment. Calibrated so
-    # that a 32-bed ward turns over roughly five or six patients per 12-hour
-    # shift, which is the order of magnitude a real acute ward runs at.
+    # Length of stay in hours; >=48h is required for enrolment. Tuned so that
+    # a 32-bed ward turns over roughly five or six patients per 12-hour shift.
+    # UNSOURCED: that figure was chosen to keep the ward moving, not checked
+    # against real throughput data.
     # Length of stay is drawn conditional on diabetes and insulin status.
     # UNSOURCED ASSUMPTION, in both direction and magnitude. It has not been
     # checked against any dataset or publication.

@@ -280,7 +280,7 @@ def test_policy_uses_the_default_threshold_not_a_hidden_individualised_one():
     )
 
 
-def _discharge_decision_state(seed=34):
+def _discharge_decision_state(specialty, seed=34):
     """A state where the policy must choose WHICH colleague to ask.
 
     Asserting the policy simply never asks anybody would be a weaker claim -
@@ -288,15 +288,13 @@ def _discharge_decision_state(seed=34):
     ask the doctor. What must not happen is choosing the role by who is
     secretly available.
     """
-    from ward_cgm_sim.core.patient import Specialty
-
     engine = WardEngine(SimConfig(), seed=seed)
     patient = next(engine.flow.patients())
-    patient.specialty = Specialty.SURGICAL
+    patient.specialty = specialty
     patient.discharge_stage = DischargeStage.READY
     patient.knowledge.known_discharge_ready = True
     patient.knowledge.discharge_reviewed_step = engine.step_index
-    patient.knowledge.known_specialty = Specialty.SURGICAL
+    patient.knowledge.known_specialty = specialty
     engine.agent_x, engine.agent_y = engine.ward_map.approach_tile(patient.bed)
     engine._read_dashboard()
 
@@ -312,25 +310,60 @@ def _discharge_decision_state(seed=34):
     return engine, patient, agent
 
 
-def test_policy_asks_the_task_appropriate_role_regardless_of_who_is_free():
-    """Swap WHICH roles are available; the role asked must not change."""
-    engine_a, _pa, agent_a = _discharge_decision_state()
-    engine_b, _pb, agent_b = _discharge_decision_state()
+def _set_availability(engine, **roles):
+    """Set specific roles, holding the coarse observable figure constant.
+
+    The count of available roles is legitimately observable, so it must not
+    change - otherwise a difference in behaviour could be attributed to
+    something the agent is allowed to see.
+    """
+    before = engine.staff.coarse_availability()
+    for role, state in roles.items():
+        engine.staff.available[role] = state
+    # Rebalance an unrelated role to restore the coarse count if needed.
+    for filler in ("hca", "nurse", "diabetes"):
+        if engine.staff.coarse_availability() == before:
+            break
+        engine.staff.available[filler] = not engine.staff.available[filler]
+    return engine.staff.coarse_availability() == before
+
+
+@pytest.mark.parametrize(
+    "specialty_name,expected_action",
+    [("SURGICAL", Action.ASK_HELP_SURGEON), ("MEDICAL", Action.ASK_HELP_DOCTOR)],
+)
+def test_policy_asks_the_task_appropriate_role_under_reciprocal_availability(
+    specialty_name, expected_action
+):
+    """Reciprocal swap: surgeon free/doctor busy versus the exact opposite.
+
+    A one-directional mutation (only the surgeon made busy) would let a policy
+    conditioning on the OTHER role, or on a combination, slip through.
+    """
+    from ward_cgm_sim.core.patient import Specialty
+
+    specialty = getattr(Specialty, specialty_name)
+
+    engine_a, _pa, agent_a = _discharge_decision_state(specialty)
+    engine_b, _pb, agent_b = _discharge_decision_state(specialty)
+
+    ok_a = _set_availability(engine_a, surgeon=True, doctor=False)
+    ok_b = _set_availability(engine_b, surgeon=False, doctor=True)
+    assert ok_a and ok_b, (
+        "positive control: the coarse availability figure must be preserved"
+    )
+    assert engine_a.observation() == engine_b.observation(), (
+        "positive control: the two states must be observationally identical"
+    )
+    assert engine_a.staff.available != engine_b.staff.available, (
+        "positive control: the hidden availability must actually differ"
+    )
 
     action_a = agent_a.act(engine_a)
-    assert action_a == Action.ASK_HELP_SURGEON, (
-        f"positive control: a surgical discharge should go to a surgeon, "
-        f"got {Action(action_a).name}"
+    assert action_a == expected_action, (
+        f"positive control: a {specialty.value} discharge should go to "
+        f"{expected_action.name}, got {Action(action_a).name}"
     )
-
-    # Make the surgeon busy and everyone else free, holding the coarse
-    # availability figure the agent CAN see as close as possible.
-    engine_b.staff.available["surgeon"] = False
-    engine_b.staff.available["doctor"] = True
-    assert engine_a.observation() == engine_b.observation(), (
-        "positive control: the swap must not change the observation"
-    )
-
     assert agent_b.act(engine_b) == action_a, (
         "the policy changed which role it asked based on hidden availability"
     )

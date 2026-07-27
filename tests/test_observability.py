@@ -210,79 +210,105 @@ def test_rule_based_policy_reads_the_dashboard():
 # Behavioural fairness: identical observable state must produce identical acts
 # ---------------------------------------------------------------------------
 
-def _policy_action_with_hidden_mutation(mutate):
-    """Run two identical engines, mutate hidden state in one, compare actions.
+def _alarm_decision_state(seed=31):
+    """Build a state where the policy is deciding whether/how to TREAT.
 
-    Stronger than the substring check above: a policy could read hidden state
-    through an alias the denylist misses, and this would still catch it.
+    Generic "run 30 steps then compare one action" probes are not enough: they
+    all land on CHECK_DASHBOARD, a branch no hidden field could influence, so
+    they would pass even if the policy read hidden state elsewhere. This puts
+    the agent at the bedside of an acknowledged, point-of-care-confirmed alarm,
+    which is exactly where glucose and threshold information would matter.
     """
-    base = WardEngine(SimConfig(), seed=11)
-    variant = WardEngine(SimConfig(), seed=11)
+    from ward_cgm_sim.core.alarms import Alarm, AlarmKind
 
-    # Let both settle so there is real state to differ over.
-    agent_a, agent_b = RuleBasedAgent(), RuleBasedAgent()
-    agent_a.reset()
-    agent_b.reset()
-    for _ in range(30):
-        base.step(agent_a.act(base))
-        variant.step(agent_b.act(variant))
+    cfg = SimConfig()
+    engine = WardEngine(cfg, seed=seed)
+    patient = next(p for p in engine.flow.patients() if p.is_enrolled)
 
-    assert base.observation() == variant.observation(), (
-        "positive control: the two engines must start observationally identical"
+    alarm = Alarm(
+        bed=patient.bed,
+        kind=AlarmKind.HYPER,
+        raised_step=engine.step_index,
+        cgm_value=16.0,
+    )
+    alarm.acknowledged_step = engine.step_index
+    alarm.poc_confirmed_step = engine.step_index
+    engine.active_alarms[patient.bed] = alarm
+    engine._read_dashboard()
+
+    # A point-of-care result the agent legitimately knows about: 16.0 is above
+    # the default threshold (14) but below the individualised one (18).
+    patient.knowledge.last_poc_step = engine.step_index
+    patient.knowledge.last_poc_value = 16.0
+    engine.agent_x, engine.agent_y = engine.ward_map.approach_tile(patient.bed)
+
+    agent = RuleBasedAgent()
+    agent.reset()
+    return engine, patient, agent
+
+
+def test_policy_treats_from_point_of_care_not_from_true_glucose():
+    """The observable PoC value must drive the decision, not hidden truth."""
+    engine_a, patient_a, agent_a = _alarm_decision_state()
+    engine_b, patient_b, agent_b = _alarm_decision_state()
+
+    action_a = agent_a.act(engine_a)
+    assert action_a == Action.TREAT_HYPER, (
+        f"positive control: the policy should be treating here, got {action_a!r}"
     )
 
-    mutated = mutate(variant)
-    assert mutated, "positive control: the mutation must actually have applied"
+    # Mutate hidden truth only; the PoC value the agent knows is unchanged.
+    patient_b.true_glucose = 4.0
+    assert engine_a.observation() == engine_b.observation()
+    assert agent_b.act(engine_b) == action_a, "the policy read true glucose"
 
-    assert base.observation() == variant.observation(), (
-        "the mutation changed the OBSERVATION, so this is not a hidden-state "
-        "test - pick a genuinely hidden field"
+
+def test_policy_uses_the_default_threshold_not_a_hidden_individualised_one():
+    """A personal alarm threshold is not something the nurse can see."""
+    engine_a, patient_a, agent_a = _alarm_decision_state()
+    engine_b, patient_b, agent_b = _alarm_decision_state()
+
+    action_a = agent_a.act(engine_a)
+    assert action_a == Action.TREAT_HYPER, "positive control: treating at PoC 16.0"
+
+    # 16.0 sits below this raised threshold; a policy peeking at it would stop
+    # treating. The agent has no way to know it was set.
+    patient_b.individualised_hyper_threshold = 18.0
+    assert engine_a.observation() == engine_b.observation()
+    assert agent_b.act(engine_b) == action_a, (
+        "the policy read a hidden individualised threshold"
     )
-    return agent_a.act(base), agent_b.act(variant)
 
 
-def test_policy_ignores_true_glucose():
-    def mutate(engine):
-        for patient in engine.flow.patients():
-            if not patient.is_enrolled:
-                patient.true_glucose = 2.1
-                return True
-        return False
+def test_policy_never_asks_a_specific_role_it_cannot_see_is_free():
+    """Per-role availability is hidden, so the policy must not select on it.
 
-    a, b = _policy_action_with_hidden_mutation(mutate)
-    assert a == b, "the policy reacted to a patient's true glucose"
-
-
-def test_policy_ignores_which_particular_roles_are_free():
-    """Swap WHICH roles are available while holding the count constant.
-
-    Setting them all busy would change the coarse availability figure, which is
-    legitimately observable - the positive control in the helper rejects that.
-    What must not leak is which specific role is free.
+    Rather than probe one decision, this runs a whole shift and asserts the
+    policy never emits a role-targeted request - it has no observable basis
+    for choosing between roles.
     """
-    def mutate(engine):
-        roles = list(engine.staff.available)
-        states = [engine.staff.available[r] for r in roles]
-        if len(set(states)) < 2:
-            return False  # nothing to swap; helper will flag it
-        for role, state in zip(roles, reversed(states)):
-            engine.staff.available[role] = state
-        return True
+    role_actions = {
+        Action.ASK_HELP_HCA,
+        Action.ASK_HELP_NURSE,
+        Action.ASK_HELP_DOCTOR,
+        Action.ASK_HELP_SURGEON,
+    }
+    engine = WardEngine(SimConfig(), seed=33)
+    agent = RuleBasedAgent()
+    agent.reset()
 
-    a, b = _policy_action_with_hidden_mutation(mutate)
-    assert a == b, "the policy reacted to which particular staff role was free"
-
-
-def test_policy_ignores_an_individualised_alarm_threshold():
-    def mutate(engine):
-        for patient in engine.flow.patients():
-            if patient.is_enrolled:
-                patient.individualised_hyper_threshold = 25.0
-                return True
-        return False
-
-    a, b = _policy_action_with_hidden_mutation(mutate)
-    assert a == b, "the policy reacted to a hidden individualised threshold"
+    steps = 0
+    while True:
+        action = agent.act(engine)
+        assert Action(action) not in role_actions, (
+            "the policy targeted a specific staff role, whose availability is "
+            "hidden until asked"
+        )
+        _o, _r, terminated, truncated, _i = engine.step(action)
+        steps += 1
+        if terminated or truncated:
+            break
+    assert steps > 100, "positive control: the shift must actually have run"
 
 
 def test_dashboard_snapshot_is_not_shown_to_the_next_occupant_of_a_bed():

@@ -49,13 +49,12 @@ class RuleBasedAgent:
     def reset(self) -> None:
         self.target_bed = None
         self.alarms_seen = {}
+        self._seen_keys: set[tuple[int, int]] = set()
 
     def _note_seen_alarms(self, alarms) -> None:
         for alarm in alarms:
             key = (alarm.bed, alarm.raised_step)
-            if key not in getattr(self, "_seen_keys", set()):
-                if not hasattr(self, "_seen_keys"):
-                    self._seen_keys = set()
+            if key not in self._seen_keys:
                 self._seen_keys.add(key)
                 self.alarms_seen[alarm.bed] = self.alarms_seen.get(alarm.bed, 0) + 1
 

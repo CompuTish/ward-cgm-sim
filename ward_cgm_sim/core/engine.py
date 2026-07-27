@@ -96,6 +96,7 @@ class WardEngine:
         self.dashboard_seen_step: int | None = None
         # bed -> (patient_id, cgm value, staleness) at the last board read.
         self.dashboard_snapshot: dict[int, tuple[int, float | None, int]] = {}
+        self.dashboard_alarm_ids: set[int] = set()
         self.event_log: list[str] = []
         self._discharged_seen = 0  # how far through flow.discharged we've processed
         self.terminated = False
@@ -181,7 +182,12 @@ class WardEngine:
             return alarms
         if self.dashboard_seen_step is None:
             return []
-        return [a for a in alarms if a.raised_step <= self.dashboard_seen_step]
+        # Compare against the identities captured at read time, not against the
+        # step number. Actions resolve before alarms are generated, so an alarm
+        # raised later in the very same step would satisfy
+        # `raised_step <= dashboard_seen_step` and appear to have been seen
+        # before it existed.
+        return [a for a in alarms if id(a) in self.dashboard_alarm_ids]
 
     def _read_dashboard(self) -> None:
         """Take a snapshot of the telemetry board.
@@ -192,6 +198,10 @@ class WardEngine:
         the whole reason the board has a location.
         """
         self.dashboard_seen_step = self.step_index
+        # Exactly which alarms were on the board at the moment of the read.
+        self.dashboard_alarm_ids = {
+            id(a) for a in self.active_alarms.values() if a.resolved_step is None
+        }
         # Keyed by bed but stamped with patient identity: beds get reused, and
         # showing a new admission the previous occupant's glucose would be a
         # particularly nasty way to be wrong.
@@ -414,9 +424,13 @@ class WardEngine:
         ac = self.cfg.alarms
         uc = self.cfg.usual_care
         if patient.true_glucose < ac.hypo_threshold:
+            # Drawn from the ACTION stream. This is a consequence of the agent
+            # choosing to look, so putting it on rng_care would let an action
+            # shift the exogenous routine-monitoring sequence and desynchronise
+            # the two arms.
             noticed = (
                 patient.true_glucose < ac.severe_hypo_threshold
-                or patient.rng_care.random() < uc.bedside_symptom_recognition
+                or patient.rng_action.random() < uc.bedside_symptom_recognition
             )
             if noticed:
                 self._record_hypo_detection(patient, "usual_care")
@@ -759,18 +773,16 @@ class WardEngine:
 
         if below:
             patient.hypo_recovery_steps = 0
+            patient.hypo_consecutive_low_steps += 1
             if patient.hypo_episode_started_step is None:
                 patient.hypo_episode_started_step = self.step_index
                 patient.hypo_episode_detected = False
                 patient.hypo_episode_counted = False
-            # Only count an episode once it has lasted at least 15 minutes,
-            # following the consensus definition of a CGM-detected
-            # hypoglycaemic event. Without this, every transient dip inflates
-            # the denominator and the detection rate becomes meaningless.
-            # +1 because the step on which the episode started is itself a
-            # below-threshold sample; without it a "15 minute" event would
-            # require four samples rather than three.
-            duration = self.step_index - patient.hypo_episode_started_step + 1
+            # Qualification counts CONSECUTIVE below-threshold samples, not
+            # elapsed time since onset. Using elapsed time would let a trace
+            # like 3.5, 4.0, 4.0, 3.5 - two low readings, never fifteen
+            # continuous minutes - qualify as an event.
+            duration = patient.hypo_consecutive_low_steps
             if not patient.hypo_episode_counted and duration >= ac.hypo_event_min_steps:
                 patient.hypo_episode_counted = True
                 self.kpi["hypo_episodes"] += 1
@@ -784,8 +796,10 @@ class WardEngine:
             # An episode ends only after SUSTAINED recovery. A single reading
             # back above threshold does not end it - otherwise a patient
             # hovering at 3.5, 4.0, 3.5 is counted as two separate events when
-            # clinically it is plainly one.
+            # clinically it is plainly one. The consecutive-low run breaks
+            # immediately, though: qualification needs unbroken time below.
             patient.hypo_recovery_steps += 1
+            patient.hypo_consecutive_low_steps = 0
             if patient.hypo_recovery_steps >= ac.hypo_recovery_min_steps:
                 patient.hypo_episode_started_step = None
                 patient.hypo_episode_detected = False

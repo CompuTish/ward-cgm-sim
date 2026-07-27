@@ -128,15 +128,16 @@ class AlarmConfig:
 class PatientConfig:
     """Population mix and eligibility-relevant characteristics."""
 
-    # SIGNAL-ENRICHED, NOT EPIDEMIOLOGICALLY CALIBRATED. On a real acute ward
-    # roughly 20% of inpatients have diabetes and perhaps a third of those are
-    # on two or more insulin injections a day, which after the stay and consent
-    # criteria leaves one or two eligible patients per 32 beds. A cohort that
-    # small produces almost no events in a 12-hour shift, so the population
-    # here is deliberately enriched to make the mechanism observable in
-    # tractable numbers of episodes. Absolute rates from this model are
-    # therefore NOT estimates of real-ward incidence; only the *contrast*
-    # between the telemetry and routine-monitoring arms is interpretable.
+    # ASSUMPTION, NOT AN ESTIMATE. This value is not derived from any data
+    # source. It is set deliberately high so that the eligible cohort is large
+    # enough for the mechanism to be observable in a tractable number of
+    # episodes; a smaller cohort produces almost no events in a 12-hour shift
+    # and any arm difference is lost in noise.
+    #
+    # Absolute rates from this model are therefore NOT incidence estimates.
+    # Only the *contrast* between the telemetry and routine-monitoring arms is
+    # interpretable, and it must be re-run with sourced values before it
+    # informs any real study design.
     # See docs/POMDP.md, "Calibration and limitations".
     diabetes_prevalence: float = 0.45
     # Telemetry is modelled as ongoing routine care, not something started from
@@ -162,13 +163,16 @@ class PatientConfig:
     # Length of stay in hours; >=48h is required for enrolment. Calibrated so
     # that a 32-bed ward turns over roughly five or six patients per 12-hour
     # shift, which is the order of magnitude a real acute ward runs at.
-    # Length of stay is drawn conditional on the patient's diabetes and insulin
-    # status. This is not a modelling convenience: inpatients with diabetes on
-    # multiple daily insulin injections do have materially longer admissions,
-    # and it resolves a real tension in the model. A uniformly long-stay ward
-    # would give a workable telemetry cohort but almost no discharges, while a
-    # uniformly short-stay ward turns over briskly and leaves nobody eligible.
-    # Concentrating the long stays in the eligible group gives both.
+    # Length of stay is drawn conditional on diabetes and insulin status. The
+    # DIRECTION of that association is widely reported, but the magnitudes here
+    # are assumptions, not estimates, and are unsourced.
+    #
+    # The conditioning also resolves a structural tension: a uniformly
+    # long-stay ward gives a workable telemetry cohort but almost no
+    # discharges, while a uniformly short-stay ward turns over briskly and
+    # leaves nobody eligible. Concentrating long stays in the eligible group
+    # gives both, which is convenient - and that convenience is a reason to
+    # treat these numbers with suspicion until they are sourced.
     #
     # The criterion is expected time *remaining*, and patients present at
     # handover are part-way through their stay, so the eligible distribution
@@ -186,9 +190,10 @@ class PatientConfig:
     prob_withdraws_consent: float = 0.0006
 
     # Risk profile.
-    # Hypoglycaemia risk is concentrated in the insulin-treated group, which is
-    # both clinically true and what makes the monitored cohort the one where a
-    # detection difference could show up at all.
+    # Hypoglycaemia risk is concentrated in the insulin-treated group. The
+    # direction is not controversial; the magnitudes are assumptions. Note the
+    # convenience: this is also what makes the monitored cohort the group where
+    # a detection difference could show up at all.
     hypo_risk_range: tuple[float, float] = (0.1, 0.45)  # diabetes, <2 injections
     hypo_risk_range_insulin: tuple[float, float] = (0.5, 1.0)
     hyper_risk_range: tuple[float, float] = (0.1, 1.0)

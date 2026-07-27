@@ -178,6 +178,7 @@ class PatientState:
     hypo_episode_detected_step: int | None = None
     hypo_episode_detected_route: str | None = None
     hypo_recovery_steps: int = 0
+    hypo_consecutive_low_steps: int = 0
 
     knowledge: PatientKnowledge = field(default_factory=PatientKnowledge)
 

@@ -118,9 +118,9 @@ def build_observation(engine) -> list[float]:
         visible_here = 1.0 if patient.location is Location.BED else 0.0
 
         # Glucose comes from the agent's last look at the telemetry board, not
-        # from a live feed. An agent that never walks to the nurse station has
-        # no glucose information at all, and one that walked away ten minutes
-        # ago is working from ten-minute-old numbers.
+        # from a live feed. An agent that has never checked has no glucose
+        # information at all, and one that checked ten minutes ago is working
+        # from ten-minute-old numbers.
         cgm_value = UNKNOWN
         staleness = UNKNOWN
         if cfg.telemetry_enabled and patient.is_enrolled:

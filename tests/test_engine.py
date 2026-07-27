@@ -459,3 +459,104 @@ def test_acknowledging_an_alarm_without_confirming_it_is_penalised():
         "an acknowledged but unconfirmed alarm accrued no penalty"
     )
     assert info["reward_components"].get("unconfirmed_significant_alarm", 0.0) < 0
+
+
+def test_an_alarm_raised_after_the_board_was_read_is_not_visible():
+    """Actions resolve before alarms are generated within a step.
+
+    Comparing raised_step <= dashboard_seen_step therefore let an alarm created
+    later in the same step count as already seen - the agent appearing to know
+    about something before it existed.
+    """
+    from ward_cgm_sim.core.alarms import Alarm, AlarmKind
+
+    engine = WardEngine(SimConfig(), seed=25)
+    engine.agent_x, engine.agent_y = 1, 1  # away from the station
+    engine._read_dashboard()
+    assert engine.dashboard_seen_step is not None, "positive control: board read"
+
+    patient = next(p for p in engine.flow.patients() if p.is_enrolled)
+    later = Alarm(
+        bed=patient.bed,
+        kind=AlarmKind.SEVERE_HYPO,
+        raised_step=engine.step_index,  # same step as the read
+        cgm_value=2.4,
+    )
+    engine.active_alarms[patient.bed] = later
+
+    assert later not in engine.visible_alarms(), (
+        "an alarm raised after the board was read was treated as seen"
+    )
+
+    # Positive counterpart: reading again does reveal it.
+    engine._read_dashboard()
+    assert later in engine.visible_alarms()
+
+
+def test_interrupted_lows_do_not_qualify_as_a_sustained_event():
+    """3.5, 4.0, 4.0, 3.5 is two isolated lows, not fifteen minutes below."""
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0
+    engine = WardEngine(cfg, seed=26)
+    patient = next(engine.flow.patients())
+
+    for value in [3.5, 4.0, 4.0, 3.5]:
+        patient.true_glucose = value
+        engine._track_hypo_episode(patient)
+        engine.step_index += 1
+
+    assert engine.kpi["hypo_episodes"] == 0, (
+        "interrupted lows were counted as a sustained 15-minute event"
+    )
+
+
+def test_three_consecutive_lows_do_qualify():
+    """Positive counterpart to the interrupted case."""
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0
+    engine = WardEngine(cfg, seed=26)
+    patient = next(engine.flow.patients())
+
+    for value in [3.5, 3.5, 3.5]:
+        patient.true_glucose = value
+        engine._track_hypo_episode(patient)
+        engine.step_index += 1
+
+    assert engine.kpi["hypo_episodes"] == 1
+
+
+def test_bedside_checking_does_not_disturb_the_routine_monitoring_stream():
+    """Symptom recognition is an ACTION consequence, not exogenous care.
+
+    Drawing it from rng_care would let the agent's choice to look shift the
+    routine-monitoring sequence, desynchronising the two arms.
+    """
+    def run(check: bool):
+        cfg = SimConfig()
+        # Routine monitoring off, so any rng_care movement can only come from
+        # the bedside check itself.
+        cfg.usual_care.routine_detection_prob = 0.0
+        engine = WardEngine(cfg, seed=27)
+        patient = next(engine.flow.patients())
+        # The patient MUST be hypoglycaemic, or no symptom-recognition draw
+        # happens at all and this test passes vacuously. Kept just above the
+        # severe threshold so the probabilistic branch is the one exercised.
+        patient.true_glucose = 3.5
+        patient.target_glucose = 3.5
+        engine.agent_x, engine.agent_y = engine.ward_map.approach_tile(patient.bed)
+        before_action = patient.rng_action.getstate()
+        engine.step(int(Action.CHECK_PATIENT if check else Action.WAIT))
+        moved_action = patient.rng_action.getstate() != before_action
+        return patient.rng_care.getstate(), moved_action
+
+    care_wait, moved_wait = run(False)
+    care_check, moved_check = run(True)
+
+    # POSITIVE CONTROL: the check must actually have drawn something, or
+    # "rng_care did not move" is trivially true.
+    assert moved_check and not moved_wait, (
+        "positive control failed: CHECK_PATIENT did not consume an action draw"
+    )
+    assert care_wait == care_check, (
+        "checking a patient consumed the exogenous routine-monitoring stream"
+    )

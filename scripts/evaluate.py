@@ -32,6 +32,7 @@ Usage:
 """
 
 import argparse
+import random
 import statistics
 import sys
 from pathlib import Path
@@ -56,8 +57,6 @@ OUTCOMES = [
     ("cohort_time_below_range_steps", "cohort time below range (patient-steps)", True),
     ("cohort_severe_hypo_events", "cohort severe hypo events", True),
     ("cohort_hypo_episodes", "cohort hypo episodes (denominator)", None),
-    ("mean_hypo_detection_delay_steps", "ward-wide detection delay (steps)", True),
-    ("hypo_detection_rate", "ward-wide episodes detected (rate)", False),
     ("time_below_range_steps", "time below range (patient-steps)", True),
     ("severe_hypo_events", "severe hypo events", True),
     ("serious_adverse_events", "serious adverse events", True),
@@ -99,6 +98,40 @@ def mean_of(results: list[dict], key: str) -> float | None:
             continue
         values.append(float(v))
     return statistics.mean(values) if values else None
+
+
+def bootstrap_ci(
+    results: list[dict],
+    numerator: str,
+    denominator: str,
+    draws: int = 2000,
+    seed: int = 12345,
+) -> tuple[float, float] | None:
+    """Percentile bootstrap CI, resampling whole SHIFTS.
+
+    Shifts are the unit of randomisation, and events within a shift are
+    correlated (same ward, same staff, same patients), so resampling
+    individual events would understate the uncertainty. With ~30 events per
+    arm the interval is wide, which is the point: a point estimate alone
+    invites over-reading a very small sample.
+    """
+    if not results:
+        return None
+    rng = random.Random(seed)
+    n = len(results)
+    estimates = []
+    for _ in range(draws):
+        sample = [results[rng.randrange(n)] for _ in range(n)]
+        total_n = sum(r.get(numerator) or 0 for r in sample)
+        total_d = sum(r.get(denominator) or 0 for r in sample)
+        if total_d:
+            estimates.append(total_n / total_d)
+    if len(estimates) < draws * 0.5:
+        return None
+    estimates.sort()
+    lo = estimates[int(0.025 * len(estimates))]
+    hi = estimates[min(len(estimates) - 1, int(0.975 * len(estimates)))]
+    return lo, hi
 
 
 def pooled_ratio(results: list[dict], numerator: str, denominator: str) -> float | None:
@@ -144,8 +177,18 @@ def main() -> None:
 
     # ---- Primary outcomes, pooled at the event level ----------------------
     print("PRIMARY OUTCOMES (monitored cohort, pooled over all episodes)")
-    print(f"{'  outcome':40s} {'telemetry':>9s} {'routine':>9s}")
-    print("  " + "-" * 60)
+    print("95% intervals are a percentile bootstrap resampling whole shifts.")
+    print(f"{'  outcome':38s} {'telemetry':>20s} {'routine':>20s}")
+    print("  " + "-" * 76)
+
+    def with_ci(results, num, den) -> str:
+        point = pooled_ratio(results, num, den)
+        if point is None:
+            return "     n/a"
+        ci = bootstrap_ci(results, num, den)
+        if ci is None:
+            return f"{point:8.2f}"
+        return f"{point:6.2f} [{ci[0]:.2f},{ci[1]:.2f}]"
 
     for label, num, den in (
         ("detection rate", "cohort_hypo_detections", "cohort_hypo_episodes"),
@@ -155,16 +198,26 @@ def main() -> None:
             "cohort_hypo_detections",
         ),
     ):
-        on = pooled_ratio(telemetry_on, num, den)
-        off = pooled_ratio(telemetry_off, num, den)
-        print(f"  {label:38s} {fmt(on)} {fmt(off)}")
+        print(f"  {label:36s} {with_ci(telemetry_on, num, den):>20s} "
+              f"{with_ci(telemetry_off, num, den):>20s}")
 
     on_ep = sum(r.get("cohort_hypo_episodes") or 0 for r in telemetry_on)
     off_ep = sum(r.get("cohort_hypo_episodes") or 0 for r in telemetry_off)
     on_det = sum(r.get("cohort_hypo_detections") or 0 for r in telemetry_on)
     off_det = sum(r.get("cohort_hypo_detections") or 0 for r in telemetry_off)
-    print(f"  {'episodes / detected (counts)':38s} "
-          f"{on_ep:4d}/{on_det:<4d} {off_ep:4d}/{off_det:<4d}")
+    print(f"  {'episodes / detected (counts)':36s} "
+          f"{on_ep:9d}/{on_det:<10d} {off_ep:9d}/{off_det:<10d}")
+    print(f"\n  WARD-WIDE, same pooling (all patients, not just the cohort):")
+    for label, num, den in (
+        ("  detection rate", "hypo_detections", "hypo_episodes"),
+        (
+            "  detection delay | detected (steps)",
+            "hypo_detection_delay_steps_total",
+            "hypo_detections",
+        ),
+    ):
+        print(f"  {label:36s} {with_ci(telemetry_on, num, den):>20s} "
+              f"{with_ci(telemetry_off, num, den):>20s}")
     print(
         "\n  Delay is CONDITIONAL ON DETECTION and is therefore censored: an\n"
         "  episode nobody ever found contributes no delay at all. Read it\n"

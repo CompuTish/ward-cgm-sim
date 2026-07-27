@@ -105,19 +105,27 @@ Outcomes are pooled at the event level across shifts:
 
 | Outcome (monitored cohort) | Telemetry | Routine monitoring |
 |---|---|---|
-| Episodes detected | 74% (23/31) | 33% (10/30) |
-| Detection delay, given detected | 4.9 steps (~24 min) | 10.8 steps (~54 min) |
+| Episodes detected | 0.66 [0.50, 0.83] | 0.34 [0.19, 0.50] |
+| Detection delay, given detected (steps) | 6.5 [4.9, 7.8] | 10.8 [3.7, 23.1] |
+| Episodes / detected | 29 / 19 | 29 / 10 |
 
-Read those two rows together, never separately. Delay is **conditional on
-detection** and therefore censored — an episode nobody ever found contributes
-no delay at all, so an arm that only catches the most obvious events looks
-deceptively fast.
+Intervals are a percentile bootstrap resampling whole shifts. **Only the first
+row supports a conclusion.** Detection rate roughly doubles and the intervals
+barely overlap. The delay difference looks large but its interval spans
+3.7–23.1 steps, because only ten episodes were ever detected in the comparator
+arm — it is not distinguishable from noise at this sample size, and should not
+be quoted as if it were.
 
-Ward-wide the same effect nearly vanishes, and that is the more interesting
-result: only about one patient in seven meets the eligibility criteria, so a
-large within-cohort improvement dilutes to very little at ward level. A real
-study would need to be powered for the cohort, and would have to decide whether
-a ward-level effect is the right thing to look for at all.
+Read the two rows together in any case. Delay is **conditional on detection**
+and therefore censored: an episode nobody found contributes no delay at all, so
+an arm that only catches the obvious events looks deceptively fast.
+
+Ward-wide, the same comparison is 0.21 [0.18, 0.24] against 0.19 [0.16, 0.22] —
+overlapping, no discernible effect. That dilution is the more interesting
+result: only about one patient in seven meets the eligibility criteria, so even
+a real within-cohort improvement barely moves a ward-level average. A study
+would need to be powered for the cohort, and would have to decide whether a
+ward-level effect is the right thing to look for at all.
 
 These are model outputs on a deliberately signal-enriched population, not
 predictions, and **no parameter here is derived from primary data**. See

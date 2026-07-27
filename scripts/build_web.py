@@ -70,7 +70,7 @@ def verify() -> None:
 
 
 def build(serve: bool) -> None:
-    command = [sys.executable, "-m", "pygbag"]
+    command = [sys.executable, "-m", "pygbag", "--title", "Ward CGM simulator"]
     if not serve:
         command.append("--build")
     command.append(str(WEB_DIR))
@@ -86,16 +86,98 @@ def build(serve: bool) -> None:
             print(f"  {item.name}  ({item.stat().st_size / 1024:.0f} KB)")
 
 
+PYGBAG_VERSION = "0.9"
+CDN_BASE = f"https://pygame-web.github.io/archives/{PYGBAG_VERSION}/"
+REPO_BASE = "https://pygame-web.github.io/archives/repo/"
+
+# Everything the browser fetches at runtime. Vendoring these means the page
+# executes no third-party code: without it, whoever controls that GitHub Pages
+# site can run arbitrary JavaScript on the host domain.
+RUNTIME_FILES = [
+    "pythons.js",
+    "browserfs.min.js",
+    "empty.html",
+    "empty.ogg",
+    "vtx.js",
+    "cpythonrc.py",
+    "vt/xterm.js",
+    "vt/xterm-addon-image.js",
+    "vt/xterm.css",
+    "cpython312/main.js",
+    "cpython312/main.data",
+    "cpython312/main.wasm",
+]
+REPO_FILES = ["index-090-cp312.json", "repodata.json"]
+
+
+def _fetch(url: str, target: Path) -> int:
+    import ssl
+    import urllib.request
+
+    try:
+        import certifi
+
+        context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:  # pragma: no cover - certifi is in the web extra
+        context = ssl.create_default_context()
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url, context=context, timeout=120) as response:
+        data = response.read()
+    target.write_bytes(data)
+    return len(data)
+
+
+def vendor_runtime() -> None:
+    """Download the pygbag runtime so the page loads nothing third-party.
+
+    The runtime is pinned to a version, so it is immutable and can be cached
+    for a year - which is what keeps the bandwidth cost of self-hosting ~25 MB
+    of WebAssembly down to something a personal site can absorb.
+    """
+    output = WEB_DIR / "build" / "web"
+    runtime = output / "runtime"
+    total = 0
+
+    for name in RUNTIME_FILES:
+        total += _fetch(CDN_BASE + name, runtime / name)
+    for name in REPO_FILES:
+        total += _fetch(REPO_BASE + name, runtime / "repo" / name)
+
+    # Point the loader at the local copy instead of the CDN.
+    index = output / "index.html"
+    html = index.read_text()
+    if CDN_BASE not in html:
+        sys.exit("pygbag output did not contain the expected CDN base URL")
+    html = html.replace(CDN_BASE, "./runtime/")
+    html = html.replace("CDN URL : ./runtime/", "CDN URL : ./runtime/ (vendored)")
+    index.write_text(html)
+
+    # The package index is resolved separately, inside the runtime itself.
+    rc = runtime / "cpythonrc.py"
+    rc.write_text(rc.read_text().replace(REPO_BASE, "./runtime/repo/"))
+
+    print(f"vendored runtime: {len(RUNTIME_FILES) + len(REPO_FILES)} files, "
+          f"{total / 1024 / 1024:.1f} MB, no third-party fetches remain")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serve", action="store_true", help="serve locally on :8000")
     parser.add_argument("--vendor-only", action="store_true")
+    parser.add_argument(
+        "--cdn",
+        action="store_true",
+        help="leave the runtime on the pygame-web CDN instead of vendoring it",
+    )
     args = parser.parse_args()
 
     vendor()
     verify()
     if not args.vendor_only:
         build(serve=args.serve)
+        if not args.serve and not args.cdn:
+            vendor_runtime()
 
 
 if __name__ == "__main__":

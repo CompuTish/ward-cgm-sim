@@ -45,7 +45,7 @@ class GlucoseConfig:
     insulin_onset_steps: int = 12  # ~1 hour
 
     # Deterioration episodes: an unlucky patient drifts toward hypo or hyper.
-    hypo_episode_prob: float = 0.0012  # scaled by the patient's hypo risk
+    hypo_episode_prob: float = 0.0038  # scaled by the patient's hypo risk
     hyper_episode_prob: float = 0.004  # scaled by the patient's hyper risk
     episode_drift: float = 0.45  # mmol/L per step while an episode is active
     episode_steps: tuple[int, int] = (6, 16)
@@ -124,19 +124,29 @@ class AlarmConfig:
 class PatientConfig:
     """Population mix and eligibility-relevant characteristics."""
 
-    diabetes_prevalence: float = 0.40  # inflated vs a real ward, for signal density
+    # SIGNAL-ENRICHED, NOT EPIDEMIOLOGICALLY CALIBRATED. On a real acute ward
+    # roughly 20% of inpatients have diabetes and perhaps a third of those are
+    # on two or more insulin injections a day, which after the stay and consent
+    # criteria leaves one or two eligible patients per 32 beds. A cohort that
+    # small produces almost no events in a 12-hour shift, so the population
+    # here is deliberately enriched to make the mechanism observable in
+    # tractable numbers of episodes. Absolute rates from this model are
+    # therefore NOT estimates of real-ward incidence; only the *contrast*
+    # between the telemetry and routine-monitoring arms is interpretable.
+    # See docs/POMDP.md, "Calibration and limitations".
+    diabetes_prevalence: float = 0.45
     # Telemetry is modelled as ongoing routine care, not something started from
     # scratch each shift: a share of the eligible patients already on the ward
     # at handover are enrolled with sensors running. The agent inherits that
     # cohort and has to manage it, which is the workflow question of interest.
-    initial_enrolled_fraction: float = 0.6
+    initial_enrolled_fraction: float = 0.85
     type_weights: dict[str, float] = field(
         default_factory=lambda: {"type1": 0.22, "type2": 0.65, "type3c": 0.08, "other": 0.05}
     )
     surgical_fraction: float = 0.45  # mixed medical/surgical ward
 
     # Insulin regimen (only patients on >=2 injections/day are eligible).
-    prob_two_or_more_injections_if_diabetic: float = 0.55
+    prob_two_or_more_injections_if_diabetic: float = 0.72  # enriched; see above
     # Probability that an enrolled patient's regimen is reduced mid-shift,
     # which makes them ineligible and requires de-enrolment.
     regimen_reduction_prob: float = 0.0035
@@ -148,16 +158,35 @@ class PatientConfig:
     # Length of stay in hours; >=48h is required for enrolment. Calibrated so
     # that a 32-bed ward turns over roughly five or six patients per 12-hour
     # shift, which is the order of magnitude a real acute ward runs at.
-    los_hours_range: tuple[float, float] = (12.0, 168.0)
-    prob_los_at_least_48h: float = 0.55
+    # Length of stay is drawn conditional on the patient's diabetes and insulin
+    # status. This is not a modelling convenience: inpatients with diabetes on
+    # multiple daily insulin injections do have materially longer admissions,
+    # and it resolves a real tension in the model. A uniformly long-stay ward
+    # would give a workable telemetry cohort but almost no discharges, while a
+    # uniformly short-stay ward turns over briskly and leaves nobody eligible.
+    # Concentrating the long stays in the eligible group gives both.
+    #
+    # The criterion is expected time *remaining*, and patients present at
+    # handover are part-way through their stay, so the eligible distribution
+    # has to extend well beyond 48 hours for anyone to qualify.
+    los_hours_range: tuple[float, float] = (12.0, 120.0)  # everyone else
+    los_hours_range_insulin: tuple[float, float] = (72.0, 336.0)
+    prob_los_at_least_48h: float = 0.35  # among non-insulin patients
 
     # Exclusions.
     prob_pregnant_or_breastfeeding: float = 0.03
     prob_end_of_life: float = 0.04
     prob_becomes_end_of_life: float = 0.0015  # per step, transitions mid-shift
+    # Further routes to mid-shift ineligibility, per step.
+    prob_discharge_plan_revised: float = 0.0010  # stay revised under 48 hours
+    prob_withdraws_consent: float = 0.0006
 
     # Risk profile.
-    hypo_risk_range: tuple[float, float] = (0.1, 1.0)
+    # Hypoglycaemia risk is concentrated in the insulin-treated group, which is
+    # both clinically true and what makes the monitored cohort the one where a
+    # detection difference could show up at all.
+    hypo_risk_range: tuple[float, float] = (0.1, 0.45)  # diabetes, <2 injections
+    hypo_risk_range_insulin: tuple[float, float] = (0.5, 1.0)
     hyper_risk_range: tuple[float, float] = (0.1, 1.0)
     # Usual glucose for a patient with diabetes, interpolated by hyper_risk:
     # well-controlled patients sit near the bottom, chronically uncontrolled
@@ -300,6 +329,8 @@ class RewardConfig:
     delayed_alarm_response_per_step: float = -0.2
     wrong_patient_treatment: float = -4.0
     treatment_without_poc_confirmation: float = -2.0
+    # Acknowledging an alarm without confirming it is not a response.
+    unconfirmed_significant_alarm_per_step: float = -0.15
     unnecessary_treatment_poc_normal: float = -3.0
     ignored_signal_loss_per_step: float = -0.3
     unsafe_prioritisation_per_step: float = -1.0

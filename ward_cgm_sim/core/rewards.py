@@ -122,6 +122,15 @@ class RewardTracker:
     def wrong_patient_treatment(self) -> None:
         self.add("wrong_patient_treatment", self.weights.wrong_patient_treatment)
 
+    def unconfirmed_significant_alarm(self, n_alarms: int) -> None:
+        """A significant alarm noticed but never confirmed with point-of-care."""
+        if n_alarms:
+            self.add(
+                "unconfirmed_significant_alarm",
+                self.weights.unconfirmed_significant_alarm_per_step,
+                n_alarms,
+            )
+
     def treatment_without_poc(self) -> None:
         self.add(
             "treatment_without_poc_confirmation",

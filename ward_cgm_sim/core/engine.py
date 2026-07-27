@@ -27,7 +27,7 @@ from .actions import (
     PATIENT_TARGETED_ACTIONS,
     ROLE_ACTIONS,
 )
-from .alarms import Alarm, AlarmKind, evaluate_alarms, is_false_alarm
+from .alarms import Alarm, AlarmKind, alarm_family, evaluate_alarms, is_false_alarm
 from .bedflow import WardFlow
 from .eligibility import (
     can_enrol,
@@ -94,7 +94,10 @@ class WardEngine:
         self.alarm_log: list[Alarm] = []
         self.last_alarm_step: dict[tuple[int, AlarmKind], int] = {}
         self.dashboard_seen_step: int | None = None
+        # bed -> (cgm value, staleness) as of the last time the board was read.
+        self.dashboard_snapshot: dict[int, tuple[float | None, int]] = {}
         self.event_log: list[str] = []
+        self._discharged_seen = 0  # how far through flow.discharged we've processed
         self.terminated = False
         self.truncated = False
         self.termination_reason: str | None = None
@@ -110,6 +113,7 @@ class WardEngine:
             "false_alarms_raised": 0,
             "alarms_acknowledged": 0,
             "alarm_response_steps_total": 0,
+            "unconfirmed_alarm_steps": 0,
             "poc_tests": 0,
             "treatments": 0,
             "treatments_without_poc": 0,
@@ -179,6 +183,21 @@ class WardEngine:
             return []
         return [a for a in alarms if a.raised_step <= self.dashboard_seen_step]
 
+    def _read_dashboard(self) -> None:
+        """Take a snapshot of the telemetry board.
+
+        The agent carries away what it saw, not a live feed. Everything the
+        observation reports about glucose comes from this snapshot, so walking
+        away and not coming back means working from stale numbers - which is
+        the whole reason the board has a location.
+        """
+        self.dashboard_seen_step = self.step_index
+        self.dashboard_snapshot = {
+            patient.bed: (patient.last_cgm_value, patient.steps_since_valid_cgm)
+            for patient in self.flow.patients()
+            if patient.is_enrolled
+        }
+
     def adjacent_bed(self) -> int | None:
         return self.ward_map.adjacent_bed(self.agent_x, self.agent_y)
 
@@ -230,7 +249,7 @@ class WardEngine:
                 self.agent_x, self.agent_y = nx, ny
                 self.last_action_result = "moved"
                 if self.ward_map.at_station(nx, ny) and self.cfg.telemetry_enabled:
-                    self.dashboard_seen_step = self.step_index
+                    self._read_dashboard()
             else:
                 self._invalid("blocked")
             return
@@ -243,7 +262,11 @@ class WardEngine:
             if not self.cfg.telemetry_enabled:
                 self._invalid("no_telemetry")
                 return
-            self.dashboard_seen_step = self.step_index
+            # Telemetry is pushed to a handheld as well as the central monitor,
+            # so the agent can check from anywhere - but it costs a step, and
+            # what it learns is a snapshot that then ages. Standing at the
+            # nurse station refreshes it for free.
+            self._read_dashboard()
             self.last_action_result = "checked dashboard"
             return
 
@@ -443,6 +466,13 @@ class WardEngine:
         result = evaluate_eligibility(patient)
         patient.enrolment = EnrolmentStatus.ENROLLED
         patient.enrolled_step = self.step_index
+        # NOTE: enrolling does NOT add the patient to `telemetry_cohort`. That
+        # cohort is fixed at handover and is identical in both arms by
+        # construction, which is what makes the cohort-restricted outcome a
+        # like-for-like comparison. Mid-shift enrolments happen only in the
+        # telemetry arm, so counting them would make the two cohorts different
+        # populations and the primary estimand incomparable. They are still
+        # captured by the ward-wide metrics and by enrolment precision/recall.
         patient.sensor_bias = None  # fresh sensor; bias drawn on first reading
         patient.steps_since_valid_cgm = 0
         if result.eligible:
@@ -677,9 +707,14 @@ class WardEngine:
         self.kpi["discharges"] = self.flow.total_discharges
         self.kpi["max_queue_length"] = max(self.kpi["max_queue_length"], self.flow.queue_length)
 
-        # Patients who leave take their enrolment and alarms with them.
-        for patient in self.flow.discharged:
-            if patient.bed in self.active_alarms:
+        # Patients who leave take their enrolment and alarms with them. Only
+        # the newly discharged are processed: iterating the cumulative list
+        # would keep clearing alarms on their old bed, silencing whoever is
+        # admitted into it next.
+        newly_discharged = self.flow.discharged[self._discharged_seen:]
+        self._discharged_seen = len(self.flow.discharged)
+        for patient in newly_discharged:
+            if self.active_alarms.get(patient.bed) is not None:
                 self._clear_alarm(patient.bed, "discharged")
             if not patient.counted_missed_eligible:
                 patient.counted_missed_eligible = True
@@ -706,7 +741,10 @@ class WardEngine:
             # following the consensus definition of a CGM-detected
             # hypoglycaemic event. Without this, every transient dip inflates
             # the denominator and the detection rate becomes meaningless.
-            duration = self.step_index - patient.hypo_episode_started_step
+            # +1 because the step on which the episode started is itself a
+            # below-threshold sample; without it a "15 minute" event would
+            # require four samples rather than three.
+            duration = self.step_index - patient.hypo_episode_started_step + 1
             if not patient.hypo_episode_counted and duration >= ac.hypo_event_min_steps:
                 patient.hypo_episode_counted = True
                 self.kpi["hypo_episodes"] += 1
@@ -830,6 +868,27 @@ class WardEngine:
                 patient.became_ineligible_step = self.step_index
                 self.event_log.append(f"bed {patient.bed}: transitioned to end-of-life care")
 
+        # A revised discharge plan can bring the expected stay under 48 hours,
+        # which is one of the documented ways a patient becomes ineligible.
+        plan_draw = patient.rng.random()
+        if plan_draw < pc.prob_discharge_plan_revised:
+            patient.expected_los_hours = min(
+                patient.expected_los_hours,
+                patient.steps_on_ward * self.cfg.minutes_per_step / 60.0 + 24.0,
+            )
+            if patient.is_enrolled:
+                patient.became_ineligible_step = self.step_index
+                self.event_log.append(f"bed {patient.bed}: discharge brought forward")
+
+        # A patient may withdraw consent at any point. Drawn unconditionally:
+        # gating on `is_enrolled` would make the draw telemetry-dependent and
+        # desynchronise the two arms (caught by test_counterfactual_rng).
+        withdraw_draw = patient.rng.random()
+        if patient.consent_asked and withdraw_draw < pc.prob_withdraws_consent:
+            patient.consent_declined = True
+            patient.became_ineligible_step = self.step_index
+            self.event_log.append(f"bed {patient.bed}: withdrew consent")
+
     def _update_alarms(self, patient: PatientState, cgm_value: float | None) -> None:
         if not self.cfg.telemetry_enabled:
             return
@@ -863,11 +922,15 @@ class WardEngine:
         kind = next(k for k in priority if k in kinds)
 
         # Persistence logic: an out-of-range reading has to repeat before it
-        # raises an alarm, which suppresses single-sample artefacts.
+        # raises an alarm, which suppresses single-sample artefacts. Tracked by
+        # clinical family so that a patient oscillating across the severe
+        # threshold still accumulates a streak; the severity actually reported
+        # is whatever the latest reading shows.
         needed = self.cfg.alarms.persistence_readings
+        family = alarm_family(kind)
         if needed > 1:
-            streak = patient.alarm_streak.get(kind.value, 0) + 1
-            patient.alarm_streak = {kind.value: streak}
+            streak = patient.alarm_streak.get(family, 0) + 1
+            patient.alarm_streak = {family: streak}
             if streak < needed:
                 return
         else:
@@ -969,14 +1032,31 @@ class WardEngine:
                 discharge_delays += 1
                 self.kpi["discharge_delay_steps"] += 1
 
+        unconfirmed_alarms = 0
         for alarm in self.active_alarms.values():
-            if alarm.resolved_step is not None or alarm.acknowledged_step is not None:
+            if alarm.resolved_step is not None:
                 continue
-            if alarm.age(self.step_index) > ac.response_deadline_steps:
+            if (
+                alarm.acknowledged_step is None
+                and alarm.age(self.step_index) > ac.response_deadline_steps
+            ):
                 unattended_alarms += 1
+            # Acknowledging an alarm is not the same as acting on it. A
+            # clinically significant alarm that has been noticed but never
+            # confirmed with a capillary test keeps accruing a penalty -
+            # otherwise the agent could silence the board by acknowledging
+            # everything and confirming nothing.
+            if (
+                alarm.needs_poc
+                and alarm.poc_confirmed_step is None
+                and alarm.age(self.step_index) > ac.response_deadline_steps
+            ):
+                unconfirmed_alarms += 1
 
         self.rewards.time_below_range(below_range)
         self.rewards.delayed_alarm_response(unattended_alarms)
+        self.rewards.unconfirmed_significant_alarm(unconfirmed_alarms)
+        self.kpi["unconfirmed_alarm_steps"] += unconfirmed_alarms
         self.rewards.ignored_signal_loss(ignored_signal_loss)
         self.rewards.failure_to_deenrol(failure_to_deenrol)
         self.rewards.discharge_delay(discharge_delays)
@@ -1065,6 +1145,21 @@ class WardEngine:
         )
         kpi["hypo_detection_rate"] = (
             detections / kpi["hypo_episodes"] if kpi["hypo_episodes"] else None
+        )
+        # Cohort-restricted versions: the primary estimand. The monitored
+        # cohort is fixed at handover and identical in both arms, so these are
+        # the only like-for-like detection figures. Ward-wide numbers are
+        # diluted by the ~86% of patients never eligible for telemetry.
+        cohort_detections = kpi["cohort_hypo_detections"]
+        kpi["cohort_mean_detection_delay_steps"] = (
+            kpi["cohort_detection_delay_steps_total"] / cohort_detections
+            if cohort_detections
+            else None
+        )
+        kpi["cohort_detection_rate"] = (
+            cohort_detections / kpi["cohort_hypo_episodes"]
+            if kpi["cohort_hypo_episodes"]
+            else None
         )
         kpi["enrolled_now"] = sum(1 for p in self.flow.patients() if p.is_enrolled)
         kpi["queue_length"] = self.flow.queue_length

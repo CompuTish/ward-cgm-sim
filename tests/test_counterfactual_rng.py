@@ -222,9 +222,16 @@ def test_capacity_pathway_does_not_disturb_the_ward_stream():
         "ward-level RNG diverged on the intervention step itself"
     )
 
+    timing_differed = False
     for step in range(40):
         control.step(Action.WAIT)
         treated.step(Action.WAIT)
+
+        # Admission *timing* is what the intervention changes. Totals converge
+        # again once background discharges catch up, so comparing only the
+        # final counts would let this positive control pass vacuously.
+        if treated.flow.total_admissions != control.flow.total_admissions:
+            timing_differed = True
 
         assert control.rng.getstate() == treated.rng.getstate(), (
             f"ward-level RNG diverged at step {step}: an earlier admission is "
@@ -246,10 +253,10 @@ def test_capacity_pathway_does_not_disturb_the_ward_stream():
             )
 
     # Positive control: the intervention must actually have changed admission
-    # timing, or this test proves nothing at all.
-    assert treated.flow.total_admissions > control.flow.total_admissions, (
-        "intervention did not produce an earlier admission, so the capacity "
-        "pathway was never exercised"
+    # timing at some point, or this test proves nothing at all.
+    assert timing_differed, (
+        "intervention never changed admission timing, so the capacity pathway "
+        "was never exercised and this test proves nothing"
     )
 
 

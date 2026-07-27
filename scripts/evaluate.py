@@ -45,9 +45,21 @@ from ward_cgm_sim.core.engine import WardEngine  # noqa: E402
 AGENTS = {"random": RandomAgent, "rule_based": RuleBasedAgent}
 
 # (kpi key, label, lower_is_better)
+#
+# The PRIMARY outcomes are the cohort-restricted ones. The monitored cohort is
+# fixed at handover and selected identically in both arms, so it is the same
+# set of patients either way - the only like-for-like comparison available.
+# Ward-wide figures are reported underneath as context; they are diluted by the
+# large majority of patients who are never eligible for telemetry at all, and
+# so understate any effect.
 OUTCOMES = [
-    ("mean_hypo_detection_delay_steps", "hypo detection delay (steps)", True),
-    ("hypo_detection_rate", "hypo episodes detected (rate)", False),
+    ("cohort_mean_detection_delay_steps", "PRIMARY  detection delay, cohort (steps)", True),
+    ("cohort_detection_rate", "PRIMARY  episodes detected, cohort (rate)", False),
+    ("cohort_time_below_range_steps", "cohort time below range (patient-steps)", True),
+    ("cohort_severe_hypo_events", "cohort severe hypo events", True),
+    ("cohort_hypo_episodes", "cohort hypo episodes (denominator)", None),
+    ("mean_hypo_detection_delay_steps", "ward-wide detection delay (steps)", True),
+    ("hypo_detection_rate", "ward-wide episodes detected (rate)", False),
     ("time_below_range_steps", "time below range (patient-steps)", True),
     ("severe_hypo_events", "severe hypo events", True),
     ("serious_adverse_events", "serious adverse events", True),

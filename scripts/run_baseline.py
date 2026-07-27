@@ -48,6 +48,14 @@ def run_episode(agent, cfg: SimConfig, seed: int) -> dict:
     return result
 
 
+DISCLAIMER = (
+    "Academic simulation model. Clinical thresholds and treatment pathways are\n"
+    "  simplified, configurable placeholders - not clinical decision support.\n"
+    "  The population is deliberately signal-enriched: absolute rates here are\n"
+    "  NOT estimates of real-ward incidence. See docs/POMDP.md."
+)
+
+
 def summarise(results: list[dict], label: str) -> None:
     def mean(key):
         values = [r[key] for r in results if r.get(key) is not None]
@@ -97,8 +105,12 @@ def main() -> None:
     agent = AGENTS[args.agent](seed=args.seed)
     results = [run_episode(agent, cfg, seed=args.seed + i) for i in range(args.episodes)]
 
-    label = f"{args.agent} / telemetry {'ON' if cfg.telemetry_enabled else 'OFF'}"
+    label = (
+        f"{args.agent} / telemetry {'ON' if cfg.telemetry_enabled else 'OFF'} "
+        f"/ seed {args.seed}"
+    )
     summarise(results, label)
+    print(f"\n  {DISCLAIMER}")
 
     if args.components:
         print("\n  reward components (mean per shift):")

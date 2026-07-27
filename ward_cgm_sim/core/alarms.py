@@ -32,6 +32,22 @@ class AlarmKind(str, Enum):
 # expected to confirm them with a point-of-care capillary test before treating.
 SIGNIFICANT_ALARMS = (AlarmKind.HYPO, AlarmKind.SEVERE_HYPO, AlarmKind.HYPER)
 
+# Persistence is tracked by clinical *family*, not by exact alarm kind. A
+# patient oscillating 2.9, 3.1, 2.9 is continuously hypoglycaemic, but the
+# readings alternate between the severe and plain kinds - so a per-kind streak
+# would never reach two and the alarm would never fire.
+ALARM_FAMILIES = {
+    AlarmKind.HYPO: "hypo",
+    AlarmKind.SEVERE_HYPO: "hypo",
+    AlarmKind.HYPER: "hyper",
+    AlarmKind.RAPID_FALL: "rapid_fall",
+    AlarmKind.RAPID_RISE: "rapid_rise",
+}
+
+
+def alarm_family(kind: AlarmKind) -> str:
+    return ALARM_FAMILIES[kind]
+
 # Alarms that demand immediate attention; doing administrative work while one
 # of these is live is penalised as unsafe prioritisation.
 URGENT_ALARMS = (AlarmKind.HYPO, AlarmKind.SEVERE_HYPO, AlarmKind.RAPID_FALL)

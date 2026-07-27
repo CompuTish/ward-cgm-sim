@@ -255,3 +255,37 @@ def test_persistence_suppresses_a_single_stray_reading():
 
     engine._update_alarms(patient, 3.0)
     assert patient.bed in engine.active_alarms, "second consecutive reading should alarm"
+
+
+def test_persistence_survives_oscillation_across_the_severe_threshold():
+    """Readings alternating 2.9 / 3.1 are continuously hypoglycaemic.
+
+    Tracking persistence per exact alarm kind meant the streak reset on every
+    reading, so a genuinely and dangerously low patient never alarmed at all.
+    """
+    cfg = SimConfig()
+    assert cfg.alarms.persistence_readings >= 2
+
+    engine = WardEngine(cfg, seed=5)
+    patient = next(p for p in engine.flow.patients() if p.is_enrolled)
+    patient.alarm_streak = {}
+
+    engine._update_alarms(patient, 2.9)   # severe hypo reading
+    assert patient.bed not in engine.active_alarms, "first reading should not alarm"
+    engine._update_alarms(patient, 3.1)   # still hypo, different severity
+    assert patient.bed in engine.active_alarms, (
+        "sustained hypoglycaemia failed to alarm because the severity changed"
+    )
+
+
+def test_persistence_still_suppresses_an_isolated_artefact():
+    """Positive counterpart: a single spike between normal readings is silent."""
+    cfg = SimConfig()
+    engine = WardEngine(cfg, seed=5)
+    patient = next(p for p in engine.flow.patients() if p.is_enrolled)
+    patient.alarm_streak = {}
+
+    engine._update_alarms(patient, 2.8)   # artefact
+    engine._update_alarms(patient, 7.0)   # back to normal - streak must reset
+    engine._update_alarms(patient, 2.8)   # another isolated artefact
+    assert patient.bed not in engine.active_alarms

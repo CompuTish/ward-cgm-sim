@@ -187,8 +187,12 @@ class WardRenderer:
             "surgeon": (17, 16),
             "diabetes": (21, 11),
         }
+        # Staff sprites are drawn from the same coarse availability the agent
+        # can observe, not from per-role truth. Rendering exactly which roles
+        # are free would show the player something the policy cannot see.
+        visible_roles = list(anchors)[: engine.staff.coarse_availability() + 1]
         for role, (ax, ay) in anchors.items():
-            if not engine.staff.is_available(role):
+            if role not in visible_roles:
                 continue
             wobble = ((self.frame // 12) + hash(role)) % 3 - 1
             x = (ax + wobble) * TILE

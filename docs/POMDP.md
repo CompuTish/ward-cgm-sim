@@ -330,3 +330,54 @@ model. It cannot demonstrate clinical benefit. It can show whether a modelled
 mechanism plausibly produces one, where the effect is sensitive to assumptions,
 and which parameters matter most — which is exactly what is useful before
 designing a real study.
+
+## 14. Calibration and limitations
+
+**The population is deliberately signal-enriched and is not an epidemiological
+model of a real ward.** This is the most important caveat in the document.
+
+| Parameter | Model | A real acute ward | Why |
+|---|---|---|---|
+| Diabetes prevalence | 45% | ~20% | Enriched for signal density |
+| On ≥2 insulin injections/day | 72% of those | ~30% of those | Enriched |
+| Eligible patients per 32 beds | ~4–5 | ~1–2 | Consequence of the above |
+| Length of stay | Conditional on insulin status | Correlated in reality too | Resolves a real tension (below) |
+| Severe hypoglycaemia | ~2 events/shift | Far rarer | Follows from the enriched cohort |
+
+With a realistic population, one or two eligible patients per ward produce
+almost no events in a 12-hour shift, and any arm difference would be swamped by
+noise at any tractable number of episodes. The cohort is therefore enriched so
+the *mechanism* is observable.
+
+**Consequence for interpretation: absolute rates from this model are not
+estimates of real-ward incidence.** Only the *contrast* between the telemetry
+and routine-monitoring arms is meaningful, and even that is a statement about
+the model, not about patients.
+
+**Length of stay is drawn conditional on insulin status.** Insulin-treated
+inpatients genuinely have longer admissions, and modelling that resolves a
+tension that would otherwise be unresolvable: a uniformly long-stay ward gives
+a workable telemetry cohort but almost no discharges, while a uniformly
+short-stay ward turns over briskly and leaves nobody eligible for enrolment.
+
+**Other parameters that carry real uncertainty and should be varied in any
+sensitivity analysis:**
+
+- `usual_care.routine_detection_prob` (0.02/step) — the single most influential
+  parameter in the whole comparison. It sets how good the comparator is, and
+  therefore the size of any telemetry effect. It is a smooth per-step hazard
+  standing in for what is really a *scheduled* round; modelling actual 4–6
+  hourly checks would change the shape of the detection-delay distribution.
+- `alarms.persistence_readings` and `false_alarm_margin` — trade alarm burden
+  against detection latency directly.
+- `glucose.cgm_noise_sd`, `cgm_bias_sd`, `cgm_lag_steps` — sensor performance,
+  which should be set from the accuracy data of whichever device is being
+  modelled rather than left at these placeholder values.
+- `patients.initial_enrolled_fraction` — how much of the cohort is inherited at
+  handover versus recruited during the shift.
+
+**Known simplifications.** Glucose is a single scalar with no insulin
+pharmacokinetics; treatment effects are fixed ramps rather than dose-dependent;
+staff availability is a two-state chain with no handover, breaks or skill mix;
+patients do not deteriorate for non-glycaemic reasons; and the ward has no
+night/day staffing difference within the shift.

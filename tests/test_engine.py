@@ -160,6 +160,9 @@ def test_correctly_enrolling_an_eligible_patient_is_rewarded():
     patient = next(p for p in engine.flow.patients() if not p.is_enrolled)
     patient.diabetes_type = DiabetesType.TYPE1
     patient.insulin_injections_per_day = 3
+    # Expected time REMAINING must clear 48 hours, and this patient is already
+    # part-way through their admission, so the total has to account for that.
+    patient.steps_on_ward = 0
     patient.expected_los_hours = 96.0
     patient.has_capacity = True
     patient.pregnant_or_breastfeeding = False
@@ -241,3 +244,65 @@ def test_discharge_readiness_respects_expected_length_of_stay():
     for _ in range(100):
         engine.flow._step_discharge(patient, engine.step_index, {"became_ready": 0})
     assert patient.discharge_stage is DischargeStage.NOT_READY
+
+
+# ---------------------------------------------------------------------------
+# Regressions found in review
+# ---------------------------------------------------------------------------
+
+def test_a_discharged_patient_does_not_silence_the_next_occupant():
+    """Alarms are keyed by bed, and discharged patients keep their old bed.
+
+    Iterating the cumulative discharged list every step cleared alarms on that
+    bed forever, so whoever was admitted into it next could deteriorate in
+    silence. That is the worst possible failure mode for a safety model.
+    """
+    from ward_cgm_sim.core.alarms import Alarm, AlarmKind
+
+    engine = WardEngine(SimConfig(), seed=13)
+    leaving = next(engine.flow.patients())
+    bed = leaving.bed
+    leaving.discharge_stage = DischargeStage.REVIEWED
+    engine.agent_x, engine.agent_y = engine.ward_map.approach_tile(bed)
+    engine.step(int(Action.SUPPORT_DISCHARGE))
+
+    for _ in range(25):
+        engine.step(int(Action.WAIT))
+        if leaving.discharge_stage is DischargeStage.DISCHARGED:
+            break
+    assert leaving.discharge_stage is DischargeStage.DISCHARGED, (
+        "positive control: the first patient must actually leave"
+    )
+
+    # Put somebody new in that bed and raise an alarm on them.
+    newcomer = engine.flow.patient_at_bed(bed)
+    if newcomer is None:
+        newcomer = next(p for p in engine.flow.patients() if p.bed != bed)
+        engine.flow.beds[bed] = newcomer
+        newcomer.bed = bed
+    engine.active_alarms[bed] = Alarm(
+        bed=bed,
+        kind=AlarmKind.SEVERE_HYPO,
+        raised_step=engine.step_index,
+        cgm_value=2.6,
+    )
+
+    engine.step(int(Action.WAIT))
+    assert bed in engine.active_alarms, (
+        "a previous occupant's discharge silenced the new patient's alarm"
+    )
+
+
+def test_eligibility_uses_expected_remaining_stay_not_total():
+    """A patient 47 hours into a 48-hour admission is leaving tomorrow."""
+    engine = WardEngine(SimConfig(), seed=14)
+    patient = next(engine.flow.patients())
+    patient.expected_los_hours = 60.0
+
+    patient.steps_on_ward = 0
+    assert patient.expected_los_at_least_48h, "positive control: fresh admission qualifies"
+
+    # 47 hours in: only 13 hours remain, so the criterion must fail.
+    patient.steps_on_ward = int(47 * 60 / SimConfig().minutes_per_step)
+    assert not patient.expected_los_at_least_48h
+    assert patient.expected_remaining_hours == pytest.approx(13.0, abs=0.2)

@@ -97,6 +97,25 @@ trajectory. The primary outcome is hypoglycaemia **detection delay** within the
 monitored cohort; secondary outcomes cover alarm burden, enrolment quality and
 ward flow.
 
+### What it currently shows
+
+Rule-based policy, 60 matched shifts, `--seed 0`, default configuration:
+
+| Outcome (monitored cohort) | Telemetry | Routine monitoring |
+|---|---|---|
+| Hypoglycaemia detection delay | 3.2 steps (~16 min) | 7.2 steps (~36 min) |
+| Episodes detected | 88% | 25% |
+
+Ward-wide, the same effect is far smaller (7.6 vs 8.3 steps), and that gap is
+itself the interesting part: only about one patient in seven meets the
+eligibility criteria, so a large within-cohort improvement dilutes to very
+little at ward level. Any real study would need to be powered for the cohort,
+not the ward — and would have to decide whether a ward-level effect is the
+right thing to look for at all.
+
+These are model outputs on a deliberately signal-enriched population, not
+predictions. See "Calibration and limitations" in `docs/POMDP.md`.
+
 This is a simulation study of a workflow model. It cannot demonstrate clinical
 benefit — it can show whether a mechanism plausibly produces one, and which
 assumptions that conclusion depends on.

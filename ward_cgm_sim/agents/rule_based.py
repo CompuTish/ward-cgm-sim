@@ -11,9 +11,13 @@ The priority order encodes how the workflow is *supposed* to run:
   6. discharge and bed flow -> keep beds moving
   7. otherwise -> stand at the nurse station watching the dashboard
 
-It reads the engine's *observable* surface only (it may inspect what the agent
-has recorded in ``PatientKnowledge``, never a hidden field), so it is a fair
-comparator for a learned policy rather than an oracle.
+It reads the engine's *observable* surface only - what the agent has recorded
+in ``PatientKnowledge``, and its own last look at the telemetry board. It never
+consults a hidden field: not the true sensor state, not a patient's real
+discharge stage, not which staff role happens to be free, and not a patient's
+individualised alarm threshold. That restriction is what makes it a fair
+comparator for a learned policy rather than an oracle, and it is enforced by
+``tests/test_rule_based_fairness.py``.
 
 Stdlib only - this ships to the browser build.
 """
@@ -45,11 +49,11 @@ class RuleBasedAgent:
     def act(self, engine) -> int:
         goal = self._choose_goal(engine)
 
-        # Keep the picture of the telemetry board fresh. Without this the agent
-        # walks off doing paperwork and never learns that anybody is alarming -
-        # a real failure mode, but not one a baseline should exhibit. It is
-        # deliberately NOT allowed to interrupt an alarm response: you do not
-        # walk away from a patient you are assessing to look at a screen.
+        # Keep the picture of the telemetry board fresh. The board is a monitor
+        # at the nurse station, so this means physically walking back to it -
+        # which is the cost the layout is there to impose. Deliberately NOT
+        # allowed to interrupt an alarm response: you do not walk away from a
+        # patient you are assessing to go and look at a screen.
         if goal is None or goal[1] != "alarm":
             if self._dashboard_is_stale(engine):
                 return Action.CHECK_DASHBOARD
@@ -92,17 +96,27 @@ class RuleBasedAgent:
             alarms.sort(key=lambda a: -a.age(engine.step_index))
             return alarms[0].bed, "alarm"
 
-        # Silent sensor problems: no alarm ever fires for these.
+        # Silent sensor problems: no alarm ever fires for these. Read from the
+        # agent's own dashboard snapshot, not the patient's true sensor state -
+        # the whole point is that the gap is only visible if you looked.
         grace = engine.cfg.alarms.signal_loss_grace_steps
-        for patient in engine.flow.patients():
-            if patient.is_enrolled and patient.steps_since_valid_cgm > grace:
-                return patient.bed, "sensor"
+        board_age = (
+            engine.step_index - engine.dashboard_seen_step
+            if engine.dashboard_seen_step is not None
+            else None
+        )
+        if board_age is not None:
+            for bed, (_value, seen_staleness) in engine.dashboard_snapshot.items():
+                if seen_staleness + board_age > grace:
+                    patient = engine.flow.patient_at_bed(bed)
+                    if patient is not None and patient.is_enrolled:
+                        return bed, "sensor"
 
         # Bed pressure outranks enrolment paperwork: a queue that reaches the
         # unsafe threshold ends the shift, so it cannot wait behind admin.
         if engine.flow.queue_length > engine.cfg.ward.safe_queue_length:
             for patient in engine.flow.patients():
-                if patient.discharge_stage in (DischargeStage.READY, DischargeStage.REVIEWED):
+                if patient.knowledge.known_discharge_ready:
                     return patient.bed, "discharge"
 
         # De-enrol anyone the agent has already reviewed and found ineligible.
@@ -154,10 +168,15 @@ class RuleBasedAgent:
             if last is None or engine.step_index - last > self.ELIGIBILITY_REVIEW_INTERVAL:
                 return patient.bed, "review_eligibility"
 
-        # Discharge work.
+        # Discharge work, for patients the agent has actually reviewed.
         for patient in engine.flow.patients():
-            if patient.discharge_stage in (DischargeStage.READY, DischargeStage.REVIEWED):
+            if patient.knowledge.known_discharge_ready:
                 return patient.bed, "discharge"
+
+        # Otherwise go and find out: check a patient nobody has looked at.
+        for patient in engine.flow.patients():
+            if patient.knowledge.last_checked_step is None:
+                return patient.bed, "check"
 
         return None
 
@@ -188,7 +207,9 @@ class RuleBasedAgent:
                 return Action.TREAT_HYPO
             if poc < ac.hypo_threshold:
                 return Action.TREAT_HYPO
-            if poc > patient.hyper_threshold(ac.hyper_threshold_default):
+            # The default threshold, not the patient's individualised one - the
+            # agent has no way of knowing a personal threshold was set.
+            if poc > ac.hyper_threshold_default:
                 return Action.TREAT_HYPER
             # Point-of-care disagrees with the alarm: trust point-of-care and
             # do not treat. Checking the patient clears the visit.
@@ -208,14 +229,11 @@ class RuleBasedAgent:
             return Action.ASK_CONSENT
         if intent == "enrol":
             return Action.ENROL
+        if intent == "check":
+            return Action.CHECK_PATIENT
         if intent == "discharge":
-            # Ask the right colleague when one can take the decision, otherwise
-            # do it yourself.
-            if patient.discharge_stage is DischargeStage.READY:
-                if engine.staff.is_available("surgeon") and patient.specialty is Specialty.SURGICAL:
-                    return Action.ASK_HELP_SURGEON
-                if engine.staff.is_available("doctor") and patient.specialty is Specialty.MEDICAL:
-                    return Action.ASK_HELP_DOCTOR
+            # Just do it. Asking a colleague first would need to know which
+            # role is free, and the agent cannot see that without asking.
             return Action.SUPPORT_DISCHARGE
 
         return Action.WAIT
@@ -227,16 +245,19 @@ class RuleBasedAgent:
             return Action.WAIT
         return self._step_toward(engine, approach)
 
+    def _walk_to_station(self, engine) -> int:
+        target = engine.ward_map.station_tiles[0]
+        # Stand beside the station rather than on it.
+        beside = (target[0] - 1, target[1])
+        return self._step_toward(engine, beside)
+
     def _go_to_station(self, engine) -> int:
         if engine.ward_map.at_station(engine.agent_x, engine.agent_y):
             # Standing at the board: keep the queue moving, else watch it.
             if engine.flow.queue_length > engine.cfg.ward.safe_queue_length:
                 return Action.PRIORITISE_BEDFLOW
             return Action.CHECK_DASHBOARD
-        target = engine.ward_map.station_tiles[0]
-        # Stand beside the station rather than on it.
-        beside = (target[0] - 1, target[1])
-        return self._step_toward(engine, beside)
+        return self._walk_to_station(engine)
 
     def _step_toward(self, engine, goal: tuple[int, int]) -> int:
         start = (engine.agent_x, engine.agent_y)

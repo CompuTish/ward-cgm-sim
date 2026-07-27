@@ -117,14 +117,20 @@ def build_observation(engine) -> list[float]:
 
         visible_here = 1.0 if patient.location is Location.BED else 0.0
 
-        # CGM is only on the board for enrolled patients with a live signal,
-        # and only when telemetry is switched on at all.
+        # Glucose comes from the agent's last look at the telemetry board, not
+        # from a live feed. An agent that never walks to the nurse station has
+        # no glucose information at all, and one that walked away ten minutes
+        # ago is working from ten-minute-old numbers.
         cgm_value = UNKNOWN
         staleness = UNKNOWN
         if cfg.telemetry_enabled and patient.is_enrolled:
-            if patient.last_cgm_value is not None:
-                cgm_value = min(1.0, patient.last_cgm_value / GLUCOSE_SCALE)
-            staleness = min(STALENESS_CAP, patient.steps_since_valid_cgm) / STALENESS_CAP
+            snapshot = engine.dashboard_snapshot.get(bed)
+            if snapshot is not None:
+                seen_value, seen_staleness = snapshot
+                age = engine.step_index - (engine.dashboard_seen_step or 0)
+                if seen_value is not None:
+                    cgm_value = min(1.0, seen_value / GLUCOSE_SCALE)
+                staleness = min(STALENESS_CAP, seen_staleness + age) / STALENESS_CAP
 
         obs.extend(
             [

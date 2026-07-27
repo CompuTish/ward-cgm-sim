@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import random
 
+from ..config import MINUTES_PER_STEP
+
 
 class DiabetesType(str, Enum):
     NONE = "none"
@@ -201,8 +203,20 @@ class PatientState:
         return self.diabetes_type is not DiabetesType.NONE
 
     @property
+    def expected_remaining_hours(self) -> float:
+        """Hours the patient is still expected to stay, from now.
+
+        The criterion is "expected to REMAIN on the ward at least 48 hours", so
+        it has to be measured from the moment of assessment. Testing total
+        length of stay instead would let a patient 47 hours into a 48-hour
+        admission qualify, when they are in fact leaving tomorrow.
+        """
+        elapsed_hours = self.steps_on_ward * MINUTES_PER_STEP / 60.0
+        return max(0.0, self.expected_los_hours - elapsed_hours)
+
+    @property
     def expected_los_at_least_48h(self) -> bool:
-        return self.expected_los_hours >= 48.0
+        return self.expected_remaining_hours >= 48.0
 
     @property
     def two_or_more_injections(self) -> bool:
@@ -252,17 +266,33 @@ def sample_patient(
         diabetes_type = DiabetesType.NONE
         injections = 0
 
-    if rng.random() < pc.prob_los_at_least_48h:
+    # Length of stay conditional on insulin status - see config for why.
+    if has_diabetes and injections >= 2:
+        expected_los = rng.uniform(*pc.los_hours_range_insulin)
+    elif rng.random() < pc.prob_los_at_least_48h:
         expected_los = rng.uniform(48.0, pc.los_hours_range[1])
     else:
         expected_los = rng.uniform(pc.los_hours_range[0], 47.0)
 
     specialty = Specialty.SURGICAL if rng.random() < pc.surgical_fraction else Specialty.MEDICAL
-    # Surgical patients tend to have shorter planned stays.
-    if specialty is Specialty.SURGICAL and rng.random() < 0.25:
+    # Elective surgical patients tend to have shorter planned stays. Not
+    # applied to insulin-treated patients: their stay is already drawn from
+    # the longer distribution for the reasons given in config, and shortening
+    # it here would quietly undo that.
+    short_stay_draw = rng.random()
+    if (
+        specialty is Specialty.SURGICAL
+        and not (has_diabetes and injections >= 2)
+        and short_stay_draw < 0.25
+    ):
         expected_los = min(expected_los, rng.uniform(12.0, 47.0))
 
-    hypo_risk = rng.uniform(*pc.hypo_risk_range) if has_diabetes else rng.uniform(0.0, 0.2)
+    if has_diabetes and injections >= 2:
+        hypo_risk = rng.uniform(*pc.hypo_risk_range_insulin)
+    elif has_diabetes:
+        hypo_risk = rng.uniform(*pc.hypo_risk_range)
+    else:
+        hypo_risk = rng.uniform(0.0, 0.15)
     hyper_risk = rng.uniform(*pc.hyper_risk_range) if has_diabetes else rng.uniform(0.0, 0.2)
     if has_diabetes:
         # A patient's usual glucose tracks how poorly controlled they are, so

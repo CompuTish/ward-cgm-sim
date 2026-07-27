@@ -72,6 +72,8 @@ class PatientKnowledge:
     consent_asked_step: int | None = None
     known_consented: bool | None = None
     known_excluded: bool | None = None  # pregnancy/breastfeeding/end-of-life seen in notes
+    known_specialty: "Specialty | None" = None  # learned from the notes
+    discharge_asked_step: int | None = None  # a colleague has been asked
     last_checked_step: int | None = None
     last_poc_step: int | None = None
     last_poc_value: float | None = None

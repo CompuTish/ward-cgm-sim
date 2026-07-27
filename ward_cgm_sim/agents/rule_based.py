@@ -253,8 +253,18 @@ class RuleBasedAgent:
         if intent == "check":
             return Action.CHECK_PATIENT
         if intent == "discharge":
-            # Just do it. Asking a colleague first would need to know which
-            # role is free, and the agent cannot see that without asking.
+            # Ask the role the TASK calls for, chosen from the specialty the
+            # agent has read in the notes. Not knowing whether that person is
+            # free is no reason not to ask them - and choosing by who happens
+            # to be available would be reading hidden state.
+            if patient.knowledge.discharge_asked_step is None:
+                specialty = patient.knowledge.known_specialty
+                if specialty is Specialty.SURGICAL:
+                    patient.knowledge.discharge_asked_step = engine.step_index
+                    return Action.ASK_HELP_SURGEON
+                if specialty is Specialty.MEDICAL:
+                    patient.knowledge.discharge_asked_step = engine.step_index
+                    return Action.ASK_HELP_DOCTOR
             return Action.SUPPORT_DISCHARGE
 
         return Action.WAIT

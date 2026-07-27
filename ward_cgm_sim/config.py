@@ -163,9 +163,9 @@ class PatientConfig:
     # Length of stay in hours; >=48h is required for enrolment. Calibrated so
     # that a 32-bed ward turns over roughly five or six patients per 12-hour
     # shift, which is the order of magnitude a real acute ward runs at.
-    # Length of stay is drawn conditional on diabetes and insulin status. The
-    # DIRECTION of that association is widely reported, but the magnitudes here
-    # are assumptions, not estimates, and are unsourced.
+    # Length of stay is drawn conditional on diabetes and insulin status.
+    # UNSOURCED ASSUMPTION, in both direction and magnitude. It has not been
+    # checked against any dataset or publication.
     #
     # The conditioning also resolves a structural tension: a uniformly
     # long-stay ward gives a workable telemetry cohort but almost no
@@ -190,10 +190,10 @@ class PatientConfig:
     prob_withdraws_consent: float = 0.0006
 
     # Risk profile.
-    # Hypoglycaemia risk is concentrated in the insulin-treated group. The
-    # direction is not controversial; the magnitudes are assumptions. Note the
-    # convenience: this is also what makes the monitored cohort the group where
-    # a detection difference could show up at all.
+    # Hypoglycaemia risk is concentrated in the insulin-treated group.
+    # UNSOURCED ASSUMPTION. Note the convenience: this is also precisely what
+    # makes the monitored cohort the group where a detection difference could
+    # show up at all, which is a reason to distrust it until sourced.
     hypo_risk_range: tuple[float, float] = (0.1, 0.45)  # diabetes, <2 injections
     hypo_risk_range_insulin: tuple[float, float] = (0.5, 1.0)
     hyper_risk_range: tuple[float, float] = (0.1, 1.0)
@@ -211,9 +211,10 @@ class WardConfig:
     initial_occupancy: float = 0.88
     initial_queue: tuple[int, int] = (2, 6)
 
-    # Time-varying arrival intensity (expected arrivals per step). Tuned so a
-    # competent policy can keep the queue safe but a distracted one cannot,
-    # and so that admissions roughly balance discharges over a shift.
+    # Time-varying arrival intensity (expected arrivals per step). Tuned for
+    # playability - a competent policy can keep the queue safe, a distracted
+    # one cannot - and so that admissions roughly balance discharges over a
+    # shift. Not calibrated against any real admissions data.
     arrival_rate_base: float = 0.035
     arrival_rate_peak: float = 0.07
     peak_start_step: int = 36  # arrivals build through the middle of the shift

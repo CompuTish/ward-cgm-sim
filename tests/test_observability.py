@@ -280,35 +280,60 @@ def test_policy_uses_the_default_threshold_not_a_hidden_individualised_one():
     )
 
 
-def test_policy_never_asks_a_specific_role_it_cannot_see_is_free():
-    """Per-role availability is hidden, so the policy must not select on it.
+def _discharge_decision_state(seed=34):
+    """A state where the policy must choose WHICH colleague to ask.
 
-    Rather than probe one decision, this runs a whole shift and asserts the
-    policy never emits a role-targeted request - it has no observable basis
-    for choosing between roles.
+    Asserting the policy simply never asks anybody would be a weaker claim -
+    and a wrong one: not knowing whether a doctor is free is no reason not to
+    ask the doctor. What must not happen is choosing the role by who is
+    secretly available.
     """
-    role_actions = {
-        Action.ASK_HELP_HCA,
-        Action.ASK_HELP_NURSE,
-        Action.ASK_HELP_DOCTOR,
-        Action.ASK_HELP_SURGEON,
-    }
-    engine = WardEngine(SimConfig(), seed=33)
+    from ward_cgm_sim.core.patient import Specialty
+
+    engine = WardEngine(SimConfig(), seed=seed)
+    patient = next(engine.flow.patients())
+    patient.specialty = Specialty.SURGICAL
+    patient.discharge_stage = DischargeStage.READY
+    patient.knowledge.known_discharge_ready = True
+    patient.knowledge.discharge_reviewed_step = engine.step_index
+    patient.knowledge.known_specialty = Specialty.SURGICAL
+    engine.agent_x, engine.agent_y = engine.ward_map.approach_tile(patient.bed)
+    engine._read_dashboard()
+
+    # Bed pressure, so discharge work outranks enrolment paperwork and the
+    # policy actually reaches the branch under test.
+    if engine.flow.queue:
+        waiting = engine.flow.queue[0]
+        while engine.flow.queue_length <= engine.cfg.ward.safe_queue_length + 1:
+            engine.flow.queue.append(waiting)
+
     agent = RuleBasedAgent()
     agent.reset()
+    return engine, patient, agent
 
-    steps = 0
-    while True:
-        action = agent.act(engine)
-        assert Action(action) not in role_actions, (
-            "the policy targeted a specific staff role, whose availability is "
-            "hidden until asked"
-        )
-        _o, _r, terminated, truncated, _i = engine.step(action)
-        steps += 1
-        if terminated or truncated:
-            break
-    assert steps > 100, "positive control: the shift must actually have run"
+
+def test_policy_asks_the_task_appropriate_role_regardless_of_who_is_free():
+    """Swap WHICH roles are available; the role asked must not change."""
+    engine_a, _pa, agent_a = _discharge_decision_state()
+    engine_b, _pb, agent_b = _discharge_decision_state()
+
+    action_a = agent_a.act(engine_a)
+    assert action_a == Action.ASK_HELP_SURGEON, (
+        f"positive control: a surgical discharge should go to a surgeon, "
+        f"got {Action(action_a).name}"
+    )
+
+    # Make the surgeon busy and everyone else free, holding the coarse
+    # availability figure the agent CAN see as close as possible.
+    engine_b.staff.available["surgeon"] = False
+    engine_b.staff.available["doctor"] = True
+    assert engine_a.observation() == engine_b.observation(), (
+        "positive control: the swap must not change the observation"
+    )
+
+    assert agent_b.act(engine_b) == action_a, (
+        "the policy changed which role it asked based on hidden availability"
+    )
 
 
 def test_dashboard_snapshot_is_not_shown_to_the_next_occupant_of_a_bed():

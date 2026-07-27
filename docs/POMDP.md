@@ -365,20 +365,19 @@ where possible, otherwise from published inpatient diabetes literature:
 **The population as configured is deliberately signal-enriched.** Diabetes
 prevalence, the proportion on multiple daily insulin injections, and
 hypoglycaemia risk are all set higher than a general acute ward would show, for
-one reason: with realistic values the eligible cohort is one or two patients
-and produces almost no events in a 12-hour shift, so any arm difference is
-swamped by noise. The enrichment makes the *mechanism* visible.
+one reason: with plausible values the eligible cohort becomes small enough that
+it produces almost no events in a 12-hour shift, so any arm difference is
+swamped by noise. The enrichment makes the *mechanism* visible. How small a
+realistic cohort would actually be is itself an unsourced guess.
 
 **Consequently, absolute rates from this model are not incidence estimates and
 must never be quoted as such.** Only the contrast between arms is interpretable,
 and even that is a statement about the model rather than about patients.
 
 **Length of stay and hypoglycaemia risk are drawn conditional on insulin
-status.** The direction of both associations is well established — insulin-
-treated inpatients tend to stay longer and are the group at risk of
-hypoglycaemia — but the *magnitudes* used here are assumptions, not estimates.
-Modelling the association also resolves a tension that is otherwise
-unresolvable: a uniformly long-stay ward gives a workable telemetry cohort but
+status.** Both associations are **unsourced assumptions**, in direction as well
+as magnitude; neither has been checked against a dataset or publication.
+Modelling them also resolves a tension that is otherwise unresolvable: a uniformly long-stay ward gives a workable telemetry cohort but
 almost no discharges, while a uniformly short-stay ward turns over briskly and
 leaves nobody eligible.
 

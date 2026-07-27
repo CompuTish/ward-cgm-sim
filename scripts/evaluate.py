@@ -100,6 +100,15 @@ def mean_of(results: list[dict], key: str) -> float | None:
     return statistics.mean(values) if values else None
 
 
+def _percentile_interval(estimates: list[float]) -> tuple[float, float] | None:
+    if not estimates:
+        return None
+    estimates.sort()
+    lo = estimates[int(0.025 * len(estimates))]
+    hi = estimates[min(len(estimates) - 1, int(0.975 * len(estimates)))]
+    return lo, hi
+
+
 def bootstrap_ci(
     results: list[dict],
     numerator: str,
@@ -107,13 +116,14 @@ def bootstrap_ci(
     draws: int = 2000,
     seed: int = 12345,
 ) -> tuple[float, float] | None:
-    """Percentile bootstrap CI, resampling whole SHIFTS.
+    """Marginal percentile CI for one arm, resampling whole SHIFTS.
 
-    Shifts are the unit of randomisation, and events within a shift are
-    correlated (same ward, same staff, same patients), so resampling
-    individual events would understate the uncertainty. With ~30 events per
-    arm the interval is wide, which is the point: a point estimate alone
-    invites over-reading a very small sample.
+    Shifts are the unit of randomisation and events within a shift are
+    correlated, so resampling individual events would understate uncertainty.
+
+    This is descriptive only. Do NOT infer a treatment effect from whether two
+    marginal intervals overlap - that is not a test. Use
+    ``paired_bootstrap_difference`` for the contrast.
     """
     if not results:
         return None
@@ -128,10 +138,53 @@ def bootstrap_ci(
             estimates.append(total_n / total_d)
     if len(estimates) < draws * 0.5:
         return None
-    estimates.sort()
-    lo = estimates[int(0.025 * len(estimates))]
-    hi = estimates[min(len(estimates) - 1, int(0.975 * len(estimates)))]
-    return lo, hi
+    return _percentile_interval(estimates)
+
+
+def paired_bootstrap_difference(
+    arm_a: list[dict],
+    arm_b: list[dict],
+    numerator: str,
+    denominator: str,
+    draws: int = 2000,
+    seed: int = 4242,
+) -> tuple[float, tuple[float, float]] | None:
+    """Interval for (arm_a - arm_b), resampling MATCHED SHIFT PAIRS.
+
+    The two arms are matched by seed: shift i in one arm is the same ward as
+    shift i in the other. Resampling the pair together preserves that pairing
+    and cancels the between-ward variance, which is exactly what the matched
+    design was for.
+
+    This - not the overlap of two marginal intervals - is the treatment
+    contrast. Two intervals can overlap while the paired difference excludes
+    zero, and vice versa.
+    """
+    if not arm_a or len(arm_a) != len(arm_b):
+        return None
+    rng = random.Random(seed)
+    n = len(arm_a)
+
+    def ratio(sample: list[dict]) -> float | None:
+        total_n = sum(r.get(numerator) or 0 for r in sample)
+        total_d = sum(r.get(denominator) or 0 for r in sample)
+        return total_n / total_d if total_d else None
+
+    point_a, point_b = ratio(arm_a), ratio(arm_b)
+    if point_a is None or point_b is None:
+        return None
+
+    estimates = []
+    for _ in range(draws):
+        indices = [rng.randrange(n) for _ in range(n)]
+        ra = ratio([arm_a[i] for i in indices])
+        rb = ratio([arm_b[i] for i in indices])
+        if ra is not None and rb is not None:
+            estimates.append(ra - rb)
+    interval = _percentile_interval(estimates)
+    if interval is None:
+        return None
+    return point_a - point_b, interval
 
 
 def pooled_ratio(results: list[dict], numerator: str, denominator: str) -> float | None:
@@ -190,14 +243,15 @@ def main() -> None:
             return f"{point:8.2f}"
         return f"{point:6.2f} [{ci[0]:.2f},{ci[1]:.2f}]"
 
-    for label, num, den in (
+    primary = (
         ("detection rate", "cohort_hypo_detections", "cohort_hypo_episodes"),
         (
             "detection delay | detected (steps)",
             "cohort_detection_delay_steps_total",
             "cohort_hypo_detections",
         ),
-    ):
+    )
+    for label, num, den in primary:
         print(f"  {label:36s} {with_ci(telemetry_on, num, den):>20s} "
               f"{with_ci(telemetry_off, num, den):>20s}")
 
@@ -218,6 +272,19 @@ def main() -> None:
     ):
         print(f"  {label:36s} {with_ci(telemetry_on, num, den):>20s} "
               f"{with_ci(telemetry_off, num, den):>20s}")
+    print("\n  TREATMENT CONTRAST (telemetry - routine), paired bootstrap over")
+    print("  matched shifts. THIS is the effect estimate; overlap of the two")
+    print("  marginal intervals above is not a test and must not be read as one.")
+    for label, num, den in primary:
+        result = paired_bootstrap_difference(telemetry_on, telemetry_off, num, den)
+        if result is None:
+            print(f"    {label:36s}      n/a")
+            continue
+        point, (lo, hi) = result
+        excludes_zero = lo > 0 or hi < 0
+        verdict = "excludes 0" if excludes_zero else "INCLUDES 0 - no claim"
+        print(f"    {label:36s} {point:+7.2f} [{lo:+.2f}, {hi:+.2f}]  {verdict}")
+
     print(
         "\n  Delay is CONDITIONAL ON DETECTION and is therefore censored: an\n"
         "  episode nobody ever found contributes no delay at all. Read it\n"

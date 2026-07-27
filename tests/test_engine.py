@@ -560,3 +560,49 @@ def test_bedside_checking_does_not_disturb_the_routine_monitoring_stream():
     assert care_wait == care_check, (
         "checking a patient consumed the exogenous routine-monitoring stream"
     )
+
+
+def test_an_aborted_dip_does_not_backdate_a_later_event():
+    """3.5, 4.0, 3.5, 3.5, 3.5 must date from step 2, not step 0.
+
+    Carrying the candidate onset through a recovered dip would measure
+    detection delay from a low that had already resolved, inflating it.
+    """
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0
+    engine = WardEngine(cfg, seed=28)
+    patient = next(engine.flow.patients())
+
+    for value in [3.5, 4.0, 3.5, 3.5, 3.5]:
+        patient.true_glucose = value
+        engine._track_hypo_episode(patient)
+        engine.step_index += 1
+
+    assert engine.kpi["hypo_episodes"] == 1, (
+        "positive control: the final run of three lows must qualify"
+    )
+    assert patient.hypo_episode_started_step == 2, (
+        f"event was dated from step {patient.hypo_episode_started_step}, but the "
+        f"qualifying run began at step 2"
+    )
+
+
+def test_an_aborted_dip_does_not_carry_its_detection_forward():
+    """A detection banked during a dip that resolved must not count later."""
+    cfg = SimConfig()
+    cfg.usual_care.routine_detection_prob = 0.0
+    engine = WardEngine(cfg, seed=29)
+    patient = next(engine.flow.patients())
+
+    patient.true_glucose = 3.5
+    engine._track_hypo_episode(patient)
+    engine._record_hypo_detection(patient, "usual_care")
+    assert patient.hypo_episode_detected, "positive control: detection was banked"
+
+    engine.step_index += 1
+    patient.true_glucose = 5.0  # dip resolves before qualifying
+    engine._track_hypo_episode(patient)
+
+    assert not patient.hypo_episode_detected, (
+        "a detection from an aborted dip survived into the next episode"
+    )

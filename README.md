@@ -103,29 +103,31 @@ ward flow.
 Rule-based policy, 60 matched shifts, `--seed 0`, default configuration.
 Outcomes are pooled at the event level across shifts:
 
-| Outcome (monitored cohort) | Telemetry | Routine monitoring |
-|---|---|---|
-| Episodes detected | 0.66 [0.50, 0.83] | 0.34 [0.19, 0.50] |
-| Detection delay, given detected (steps) | 6.5 [4.9, 7.8] | 10.8 [3.7, 23.1] |
-| Episodes / detected | 29 / 19 | 29 / 10 |
+The effect estimate is the **paired contrast**: shifts are matched by seed, so
+resampling matched pairs cancels between-ward variance. Comparing whether two
+marginal intervals overlap is *not* a test and the script says so.
 
-Intervals are a percentile bootstrap resampling whole shifts. **Only the first
-row supports a conclusion.** Detection rate roughly doubles and the intervals
-barely overlap. The delay difference looks large but its interval spans
-3.7–23.1 steps, because only ten episodes were ever detected in the comparator
-arm — it is not distinguishable from noise at this sample size, and should not
-be quoted as if it were.
+| Contrast (telemetry − routine), monitored cohort | Estimate |
+|---|---|
+| Detection rate | **+0.31 [+0.16, +0.50]** — excludes 0 |
+| Detection delay, given detected (steps) | −4.27 [−16.66, +2.07] — includes 0 |
 
-Read the two rows together in any case. Delay is **conditional on detection**
-and therefore censored: an episode nobody found contributes no delay at all, so
-an arm that only catches the obvious events looks deceptively fast.
+**Only the first line supports a conclusion.** Detection rate roughly doubles
+(0.66 against 0.34, from 29 episodes per arm). The delay difference looks large
+but its interval spans −16.7 to +2.1 steps, because only ten episodes were ever
+detected in the comparator arm — it is not distinguishable from noise here and
+must not be quoted as if it were.
 
-Ward-wide, the same comparison is 0.21 [0.18, 0.24] against 0.19 [0.16, 0.22] —
-overlapping, no discernible effect. That dilution is the more interesting
-result: only about one patient in seven meets the eligibility criteria, so even
-a real within-cohort improvement barely moves a ward-level average. A study
-would need to be powered for the cohort, and would have to decide whether a
-ward-level effect is the right thing to look for at all.
+Read both together in any case. Delay is **conditional on detection** and
+therefore censored: an episode nobody found contributes no delay at all, so an
+arm that only catches the obvious events looks deceptively fast.
+
+Ward-wide, detection is 0.21 [0.18, 0.24] against 0.19 [0.16, 0.22] — no
+discernible effect. That dilution is the more interesting result: only about
+one patient in seven meets the eligibility criteria, so even a real
+within-cohort improvement barely moves a ward-level average. A study would need
+to be powered for the cohort, and would have to decide whether a ward-level
+effect is the right thing to look for at all.
 
 These are model outputs on a deliberately signal-enriched population, not
 predictions, and **no parameter here is derived from primary data**. See

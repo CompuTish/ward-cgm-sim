@@ -456,6 +456,7 @@ class WardEngine:
         k.known_expected_los_at_least_48h = patient.expected_los_at_least_48h
         k.known_has_capacity = patient.has_capacity
         k.known_excluded = patient.pregnant_or_breastfeeding or patient.end_of_life
+        k.known_specialty = patient.specialty
         self.last_action_result = f"reviewed notes for bed {patient.bed}"
 
         # Correctly identifying an ineligible patient is worth something: it is
@@ -793,13 +794,24 @@ class WardEngine:
                 if patient.hypo_episode_detected:
                     self._bank_hypo_detection(patient)
         else:
-            # An episode ends only after SUSTAINED recovery. A single reading
-            # back above threshold does not end it - otherwise a patient
-            # hovering at 3.5, 4.0, 3.5 is counted as two separate events when
-            # clinically it is plainly one. The consecutive-low run breaks
-            # immediately, though: qualification needs unbroken time below.
-            patient.hypo_recovery_steps += 1
             patient.hypo_consecutive_low_steps = 0
+
+            if not patient.hypo_episode_counted:
+                # The dip never became an event. Discard the candidate onset
+                # and any provisional detection outright: carrying them forward
+                # would date a later, genuine event from an aborted dip and
+                # inflate its measured detection delay.
+                patient.hypo_episode_started_step = None
+                patient.hypo_episode_detected = False
+                patient.hypo_episode_detected_step = None
+                patient.hypo_episode_detected_route = None
+                patient.hypo_recovery_steps = 0
+                return
+
+            # A QUALIFIED event ends only after sustained recovery, so a
+            # patient hovering at 3.5, 4.0, 3.5 stays one event rather than
+            # becoming several.
+            patient.hypo_recovery_steps += 1
             if patient.hypo_recovery_steps >= ac.hypo_recovery_min_steps:
                 patient.hypo_episode_started_step = None
                 patient.hypo_episode_detected = False

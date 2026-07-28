@@ -125,7 +125,12 @@ class WardRenderer:
         if patient is None or patient.location is not Location.BED:
             self.surface.blit(self.sprites.bed, pos)
         else:
-            self.surface.blit(self.sprites.patients[patient.patient_id % len(self.sprites.patients)], pos)
+            # Skin and blanket are both keyed off the patient id, so a given
+            # patient keeps the same appearance for the whole shift.
+            skins = self.sprites.patients
+            blankets = skins[patient.patient_id % len(skins)]
+            sprite = blankets[patient.patient_id % len(blankets)]
+            self.surface.blit(sprite, pos)
 
         # Bed number, small and dim.
         label = self.font_small.render(str(bed), True, (120, 126, 140))

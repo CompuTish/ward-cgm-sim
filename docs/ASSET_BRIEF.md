@@ -11,9 +11,11 @@ a mismatch in tile size or perspective is expensive to discover late.
 
 **The game is ORTHOGONAL top-down, not isometric.**
 
-The camera looks straight down at a square grid. Think Pokémon FireRed /
-Emerald, Zelda: A Link to the Past, Stardew Valley — *not* Project Hospital,
-Two Point Hospital, The Sims, or anything drawn on a 2:1 diamond.
+The camera looks straight down at a square grid. **The direct reference is the
+Pokémon Centre interior from the GBA-era games** (FireRed/LeafGreen, Ruby/
+Sapphire/Emerald) — that exact projection, tile size, and readability. Also
+Zelda: A Link to the Past, Stardew Valley. It is *not* Project Hospital, Two
+Point Hospital, The Sims, or anything drawn on a 2:1 diamond.
 
 If isometric art is supplied it cannot be used: the renderer, the ward map and
 the movement grid are all square-tile, and converting would mean rebuilding
@@ -29,6 +31,38 @@ not.
 - Every object faces the viewer (south). No rotated variants needed unless
   listed below.
 - Light comes from the top-left. Shadows fall bottom-right, soft and short.
+
+---
+
+## 0b. Role legibility — the thing that makes this style work
+
+In a Pokémon Centre you know instantly that Nurse Joy is a nurse. Not because
+of a label, and not because of her tunic colour — because of the **cap with the
+cross**, the silhouette, and the colour block, all reading together at 16 px.
+
+This simulation lives or dies on the same thing. A viewer watching a shift needs
+to tell, at a glance and without pausing:
+
+- who the **player nurse** is, among five other staff on screen
+- which colleague just walked over — a doctor, a surgeon, an HCA?
+- **which patient** is which, so a specific patient can be followed across the
+  shift as their glucose changes
+
+Three hard rules follow:
+
+1. **Every role must be identifiable by a distinct ICONIC ATTRIBUTE, not by
+   tunic colour.** Colour is the secondary cue, never the primary one. Two
+   characters differing only in shade of blue is a failure.
+2. **The silhouette test.** Fill any character sprite with solid black. The role
+   must still be guessable from the outline alone — cap shape, coat length,
+   headwear, what they carry. If two silhouettes are identical, redesign one.
+3. **The squint test.** At 1× (16 × 24 px, unmagnified), blur or squint. Role
+   and identity must survive. Detail that only appears at 4× is decoration, not
+   information.
+
+Assume some viewers are colourblind. Deuteranopia is the common case: a green
+scrub top and a red-brown one become the same colour. The attribute must carry
+the meaning so the colour never has to.
 
 ---
 
@@ -97,7 +131,9 @@ visible top surface *and* a front face.
 14. Wall with a window / vision panel
 
 **Ward furniture (10 tiles)**
-15. Hospital bed, empty, made — head at the top of the tile
+15. Hospital bed, empty, made — head at the top of the tile. The blanket area
+    must be a flat, unshaded region so the per-patient blanket colour can be
+    swapped in cleanly without fighting a baked-in gradient.
 16. Hospital bed, empty, sheets disturbed
 17. Bedside cabinet / locker
 18. IV drip stand
@@ -140,15 +176,22 @@ Each character needs **4 directions × 3 frames** = 12 sprites, laid out as
 4 rows (down, left, right, up) × 3 columns (left-step, idle, right-step).
 The idle frame is the middle column and is used when standing still.
 
-| # | Character | Notes |
-|---|---|---|
-| 1 | **Ward nurse (the player)** | Navy blue scrubs. Must be instantly distinguishable from every other character — this is who the viewer follows. Consider a lanyard or a slightly brighter tone. |
-| 2 | Healthcare assistant (HCA) | Pale blue / light teal tunic |
-| 3 | Staff nurse | Mid blue tunic, distinct from both the player and the HCA |
-| 4 | Doctor | White coat over dark trousers, stethoscope if it reads at this size |
-| 5 | Surgeon | Green/teal scrubs, scrub cap |
-| 6 | Diabetes specialist nurse | Purple tunic |
-| 7 | Patient, walking | Hospital gown, pale, slightly slower/stooped posture |
+Each role gets an **iconic attribute** that carries the identity, plus a colour
+that reinforces it. The attribute column is the requirement; the colour column
+is a suggestion you may adjust for palette harmony.
+
+| # | Character | ICONIC ATTRIBUTE (required) | Colour |
+|---|---|---|---|
+| 1 | **Ward nurse — the player** | **White nurse's cap with a coloured cross**, worn high so it breaks the head silhouette. Plus a visible **lanyard/ID badge** on the chest. This is the one character the viewer follows for twelve hours — it must be unmistakable from anywhere on screen. | Navy tunic, white cap |
+| 2 | Healthcare assistant | **No cap, short sleeves, and a carried item** — a clipboard or a small tray held in front. Bare-headed is itself the cue. | Pale teal tunic |
+| 3 | Staff nurse | **White cap, but plain — no cross.** Same silhouette family as the player, deliberately one step down in prominence. | Mid blue tunic |
+| 4 | Doctor | **Knee-length open white coat** — the outline flares below the waist, unlike every tunic. Plus a **stethoscope round the neck** rendered as a distinct dark loop. | White coat, dark trousers |
+| 5 | Surgeon | **Scrub cap covering all hair, plus a face mask.** Head reads as a smooth solid block with a lighter band across the lower face. | Teal scrubs |
+| 6 | Diabetes specialist nurse | **Cap plus a shoulder-slung bag** (the visiting-specialist cue) — the bag strap crosses the torso diagonally, which nothing else has. | Purple tunic |
+| 7 | Patient, walking | **Hospital gown with an open back**, bare lower legs, and a **drip stand held in one hand** for at least one variant. Stooped, shorter stance than staff. | Pale gown, individual blanket-colour trim (see below) |
+
+**Sanity check before delivery:** lay all seven front-facing sprites in a row at
+1×. If you cannot name each role without the labels, the set is not done.
 
 **Skin tones:** each character needs **5 skin-tone variants**. Two acceptable
 formats — the first is strongly preferred:
@@ -167,9 +210,31 @@ Suggested tones: `#F0CDB2`, `#DEB08C`, `#BE8C68`, `#966848`, `#6C4A34`. Hair
 colour should vary too; two or three options per character is plenty, and may be
 baked in rather than indexed.
 
-**Patient in bed — `patients_in_bed.png`, 16 × 16, 5 tiles**
-A patient lying under a blanket, head on the pillow, one per skin tone. This
-overlays the bed tile, so it must align with tile 15 exactly.
+### Patients must be individually identifiable — `patients_in_bed.png`
+
+16 × 16, overlaying bed tile 15 exactly: a patient lying under a blanket, head
+on the pillow.
+
+This is not decorative. The simulation has up to 32 patients on screen at once
+and a viewer needs to follow **one specific patient** across a shift — the one
+whose glucose is falling, the one waiting for discharge. Bed numbers are printed
+but are tiny; **blanket colour is the primary identifier.**
+
+So the patient-in-bed sprite needs **two independently indexed regions**:
+
+- **Skin** — 5 tones, as above (head on the pillow is the only skin visible)
+- **Blanket** — **8 distinct colours**, swapped per patient at load time
+
+Supply the sprite **once**, with skin and blanket on their own dedicated palette
+indices listed in the index file. Do not pre-render 40 combinations.
+
+The eight blanket colours must be distinguishable from each other **and** from
+every alarm overlay colour, since they sit under the alarms. Avoid saturated
+red, amber and yellow entirely — those are reserved for clinical state. Suggested
+family: dusty blue, sage, lilac, teal, warm grey, soft pink, sand, pale mint.
+
+A patient walking (character 7) should carry a **matching trim colour** on the
+gown, so a patient who gets out of bed is still recognisably the same person.
 
 ---
 
@@ -202,6 +267,16 @@ grid cell, drawn above the bed and above the patient-in-bed sprite.
 Alarm overlays 3–7 should be designed to **animate by alternating with an empty
 frame** (a simple two-state blink), so please keep them as a single tile each;
 the code handles the blink.
+
+**Colour is reserved.** Red, amber, orange and yellow belong to clinical state
+and nothing else in the set may use them as a dominant colour — not a blanket,
+not a tunic, not a chair. When a bed goes red on this ward it must mean one
+thing. Green is similarly reserved for "sensor working" and "treated".
+
+Each alarm overlay must also carry a **shape** cue, not just a colour: a
+downward wedge for a fall, an upward one for a rise, a filled versus hollow
+badge for severe versus mild. Someone with deuteranopia must still be able to
+tell a severe hypoglycaemia alarm from a hyperglycaemia one.
 
 ### 4b. Effect overlays — `overlays_effect.png`
 
@@ -240,10 +315,13 @@ a bed to interact with it.
   appended after 36 and listed in the index)
 - `characters.png` — 84 sprites (28 rows × 3 columns) with an indexed skin
   palette, **or** five `characters_skinN.png` files of the same layout
-- `patients_in_bed.png` — 5 tiles, one per skin tone, aligned to bed tile 15
+- `patients_in_bed.png` — ONE 16 × 16 sprite aligned to bed tile 15, with skin
+  and blanket on separate indexed palette regions (5 skin tones × 8 blanket
+  colours supplied as palette tables, not as 40 pre-rendered tiles)
 - `overlays_bed.png` — 11 tiles, bed-anchored
 - `overlays_effect.png` — 1 required (16 × 8 player ring) + 1 optional
-- A plain-text or JSON index listing what is at each tile position
+- A plain-text or JSON index listing what is at each tile position, **and the
+  palette indices used for skin, blanket and any other swappable region**
 - *Optional:* the source file (Aseprite `.ase` strongly preferred, or `.pyxel`,
   or layered `.psd`)
 

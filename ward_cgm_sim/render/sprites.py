@@ -43,6 +43,21 @@ SURGEON_UNIFORM = (86, 150, 132)
 DIABETES_UNIFORM = (150, 110, 178)
 PATIENT_GOWN = (206, 214, 226)
 
+# Per-patient blanket colours. A viewer following one patient across a shift
+# identifies them by blanket, not by the tiny bed number - so these must be
+# distinguishable from each other AND from every alarm colour. Red, amber,
+# orange, yellow and green are deliberately absent: those mean clinical state.
+BLANKET_COLOURS = [
+    (122, 152, 186),  # dusty blue
+    (140, 166, 140),  # sage
+    (158, 142, 186),  # lilac
+    (110, 164, 168),  # teal
+    (166, 158, 148),  # warm grey
+    (196, 154, 168),  # soft pink
+    (188, 170, 134),  # sand
+    (146, 182, 172),  # pale mint
+]
+
 ALARM_URGENT = (216, 68, 74)
 ALARM_WARNING = (232, 158, 62)
 ENROLLED_MARK = (72, 176, 128)
@@ -125,37 +140,86 @@ def make_entrance() -> pygame.Surface:
     return surf
 
 
-def make_person(body_colour, skin_index: int = 0, bob: int = 0) -> pygame.Surface:
-    """A small two-tone character sprite with a walk bob.
+def make_person(
+    body_colour,
+    skin_index: int = 0,
+    bob: int = 0,
+    role: str = "nurse",
+) -> pygame.Surface:
+    """A character sprite carrying a role-identifying attribute.
 
-    ``bob`` shifts the body a pixel to animate movement, the cheapest possible
-    nod to the walking animation in a top-down RPG.
+    Role is read from the ATTRIBUTE - cap, coat, mask - not from tunic colour,
+    which is indistinguishable at this size and invisible to a colourblind
+    viewer. See docs/ASSET_BRIEF.md; the commissioned art follows the same rule
+    and these placeholders are a stand-in for it.
     """
     surf = _surface()
     skin = SKIN_TONES[skin_index % len(SKIN_TONES)]
     top = u(4) + bob
+    cx = TILE // 2
 
-    # head
-    pygame.draw.rect(surf, skin, pygame.Rect(TILE // 2 - u(4), top, u(8), u(7)), border_radius=u(3))
-    # hair / cap line
-    pygame.draw.rect(surf, (58, 48, 44), pygame.Rect(TILE // 2 - u(4), top, u(8), u(2)), border_radius=u(2))
-    # body
-    pygame.draw.rect(surf, body_colour, pygame.Rect(TILE // 2 - u(5), top + u(7), u(10), u(9)), border_radius=u(2))
-    # arms
-    pygame.draw.rect(surf, body_colour, pygame.Rect(TILE // 2 - u(7), top + u(8), u(2), u(6)))
-    pygame.draw.rect(surf, body_colour, pygame.Rect(TILE // 2 + u(5), top + u(8), u(2), u(6)))
-    # legs
-    pygame.draw.rect(surf, (52, 58, 72), pygame.Rect(TILE // 2 - u(4), top + u(16), u(3), u(4)))
-    pygame.draw.rect(surf, (52, 58, 72), pygame.Rect(TILE // 2 + u(1), top + u(16), u(3), u(4)))
+    # --- torso, arms, legs ------------------------------------------------
+    coat = role == "doctor"
+    body_h = u(11) if coat else u(9)          # a doctor's coat flares lower
+    body_w = u(12) if coat else u(10)
+    pygame.draw.rect(
+        surf, body_colour,
+        pygame.Rect(cx - body_w // 2, top + u(7), body_w, body_h), border_radius=u(2)
+    )
+    pygame.draw.rect(surf, body_colour, pygame.Rect(cx - u(7), top + u(8), u(2), u(6)))
+    pygame.draw.rect(surf, body_colour, pygame.Rect(cx + u(5), top + u(8), u(2), u(6)))
+    leg_y = top + u(18) if coat else top + u(16)
+    pygame.draw.rect(surf, (52, 58, 72), pygame.Rect(cx - u(4), leg_y, u(3), u(4)))
+    pygame.draw.rect(surf, (52, 58, 72), pygame.Rect(cx + u(1), leg_y, u(3), u(4)))
+
+    # --- head -------------------------------------------------------------
+    pygame.draw.rect(surf, skin, pygame.Rect(cx - u(4), top, u(8), u(7)), border_radius=u(3))
+
+    # --- the role attribute ----------------------------------------------
+    if role in ("agent", "nurse", "diabetes"):
+        # Nurse's cap: white, sitting proud of the head so it breaks the
+        # silhouette. The player alone gets the red cross.
+        pygame.draw.rect(surf, (250, 250, 252),
+                         pygame.Rect(cx - u(5), top - u(1), u(10), u(3)), border_radius=u(1))
+        if role == "agent":
+            pygame.draw.rect(surf, ALARM_URGENT, pygame.Rect(cx - u(1), top - u(1), u(2), u(3)))
+            pygame.draw.rect(surf, ALARM_URGENT, pygame.Rect(cx - u(2), top, u(4), u(1)))
+    elif role == "doctor":
+        # Dark hair plus a stethoscope loop at the collar.
+        pygame.draw.rect(surf, (58, 48, 44), pygame.Rect(cx - u(4), top, u(8), u(2)), border_radius=u(2))
+        pygame.draw.rect(surf, (40, 44, 54), pygame.Rect(cx - u(3), top + u(7), u(6), u(1)))
+    elif role == "surgeon":
+        # Scrub cap covering all hair, plus a mask band across the lower face.
+        pygame.draw.rect(surf, SURGEON_UNIFORM,
+                         pygame.Rect(cx - u(4), top - u(1), u(8), u(4)), border_radius=u(2))
+        pygame.draw.rect(surf, (232, 238, 240), pygame.Rect(cx - u(4), top + u(4), u(8), u(2)))
+    elif role == "hca":
+        # Bare-headed, and carrying a clipboard - absence of a cap is the cue.
+        pygame.draw.rect(surf, (92, 74, 58), pygame.Rect(cx - u(4), top, u(8), u(2)), border_radius=u(2))
+        pygame.draw.rect(surf, (226, 220, 200), pygame.Rect(cx + u(2), top + u(10), u(4), u(5)))
+
+    if role == "diabetes":
+        # Visiting specialist: a bag strap crossing the torso.
+        pygame.draw.line(surf, (68, 58, 74),
+                         (cx - u(5), top + u(8)), (cx + u(4), top + u(14)), u(2))
     return surf
 
 
-def make_patient_in_bed(skin_index: int = 0) -> pygame.Surface:
-    """A patient lying in bed: head on the pillow, blanket over the body."""
+def make_patient_in_bed(skin_index: int = 0, blanket_index: int = 0) -> pygame.Surface:
+    """A patient in bed, identified by blanket colour.
+
+    With up to 32 patients on screen the printed bed number is too small to
+    track at a glance, so the blanket carries the identity instead.
+    """
     surf = make_bed()
     skin = SKIN_TONES[skin_index % len(SKIN_TONES)]
+    blanket = BLANKET_COLOURS[blanket_index % len(BLANKET_COLOURS)]
     pygame.draw.rect(surf, skin, pygame.Rect(TILE // 2 - u(3), u(2), u(6), u(5)), border_radius=u(2))
-    pygame.draw.rect(surf, PATIENT_GOWN, pygame.Rect(u(4), u(8), TILE - u(8), TILE - u(11)), border_radius=u(2))
+    pygame.draw.rect(
+        surf, blanket, pygame.Rect(u(4), u(8), TILE - u(8), TILE - u(11)), border_radius=u(2)
+    )
+    # A turned-back sheet edge, so the blanket reads as bedding, not a block.
+    pygame.draw.rect(surf, BED_SHEET, pygame.Rect(u(4), u(8), TILE - u(8), u(2)))
     return surf
 
 
@@ -169,10 +233,17 @@ class SpriteSheet:
         self.station = make_station()
         self.drug_room = make_drug_room()
         self.entrance = make_entrance()
-        self.patients = [make_patient_in_bed(i) for i in range(len(SKIN_TONES))]
+        # One sprite per (skin tone, blanket colour) pair so a patient keeps a
+        # stable identity for the whole shift.
+        self.patients = [
+            [make_patient_in_bed(skin, blanket) for blanket in range(len(BLANKET_COLOURS))]
+            for skin in range(len(SKIN_TONES))
+        ]
         self.people = {
-            role: [make_person(colour, i % len(SKIN_TONES), bob)
+            role: [make_person(colour, i % len(SKIN_TONES), bob, role=role)
                    for i, bob in enumerate((0, 1))]
             for role, colour in STAFF_COLOURS.items()
         }
-        self.walking_patient = [make_person(PATIENT_GOWN, 1, bob) for bob in (0, 1)]
+        self.walking_patient = [
+            make_person(PATIENT_GOWN, 1, bob, role="patient") for bob in (0, 1)
+        ]

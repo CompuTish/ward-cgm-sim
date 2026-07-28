@@ -117,9 +117,14 @@ class WardRenderer:
             for x in range(ward_map.width):
                 tile = ward_map.tile(x, y)
                 pos = (x * TILE, y * TILE)
+                # Ground layer first. Beds, desks and doors are drawn with
+                # transparent margins so they can sit on any floor; without
+                # one beneath them the panel fill shows through and every bed
+                # gets a black surround.
+                self.surface.blit(self.sprites.tile(self._floor_name(x, y)), pos)
                 if tile == BED:
                     self._draw_bed(x, y)
-                else:
+                elif tile != FLOOR:
                     self.surface.blit(self.sprites.tile(self._tile_name(tile, x, y)), pos)
 
         self._draw_queue()
@@ -187,12 +192,15 @@ class WardRenderer:
 
     def _floor_name(self, x: int, y: int) -> str:
         ward_map = self.engine.ward_map
-        beside_a_bed = any(
+        # Two tiles, not one: a single-tile halo leaves a ragged warm outline
+        # tracing each bed, where the bays should read as whole rooms with the
+        # corridors running cool between them.
+        in_a_bay = any(
             ward_map.tile(x + dx, y + dy) == BED
-            for dx in (-1, 0, 1)
-            for dy in (-1, 0, 1)
+            for dx in range(-2, 3)
+            for dy in range(-2, 3)
         )
-        if not beside_a_bed:
+        if not in_a_bay:
             return "corridor_floor"
         # Chequerboard inside the bays, so the bed areas read as distinct
         # spaces rather than one continuous floor.

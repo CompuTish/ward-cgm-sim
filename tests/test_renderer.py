@@ -394,3 +394,21 @@ def test_the_station_board_shows_both_monitor_states():
     # because in that arm there is no dashboard to light up.
     renderer.engine.cfg.telemetry_enabled = False
     assert renderer._station_name(*monitor) == "desk_monitor_on"
+
+
+def test_the_ward_floor_is_drawn_under_every_feature_tile():
+    """Beds, desks and doors are drawn with transparent margins.
+
+    With no floor beneath them the HUD's panel fill showed through and every
+    bed gained a black surround - glaring on screen, and invisible to every
+    other assertion in this file. PANEL_BG is not in the 48-colour art palette,
+    so finding it anywhere over the map means a tile is missing its ground layer.
+    """
+    renderer = run_shift(steps=20)
+    ward_map = renderer.engine.ward_map
+    ward = pygame.Rect(0, 0, ward_map.width * TILE, ward_map.height * TILE)
+    drawn = colours(renderer.surface, ward)
+    assert len(drawn) > 20, "positive control: the map must actually be drawn"
+    assert pygame_renderer.PANEL_BG not in drawn, (
+        "the panel background is showing through a feature tile"
+    )

@@ -238,8 +238,11 @@ def draw_tiles() -> Image.Image:
     tiles.append(tile)
     tile = _floor("corridor_cool")
     d = ImageDraw.Draw(tile)
-    line(d, [(0, 7), (15, 7)], "wall_top")
-    line(d, [(0, 8), (15, 8)], "floor_mid")
+    # Grout along two edges, so tiling produces a grid of squares the same size
+    # as the bay tiles. A seam across the middle instead joins up into
+    # continuous horizontal stripes and the corridor reads as floorboards.
+    line(d, [(0, 15), (15, 15)], "floor_mid")
+    line(d, [(15, 0), (15, 15)], "floor_mid")
     tiles.append(tile)
     tile = _floor("threshold")
     d = ImageDraw.Draw(tile)

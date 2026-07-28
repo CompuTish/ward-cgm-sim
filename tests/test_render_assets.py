@@ -180,3 +180,37 @@ def test_reserved_clinical_colours_do_not_leak_into_identity_art():
                 assert used == {palette_by_name["alarm_red"]}
             else:
                 assert not used, f"reserved clinical colour leaked into tile {tile_index + 1}"
+
+
+def test_up_facing_patients_show_the_open_backed_gown():
+    """The gown's open back is a brief requirement and easy to lose silently.
+
+    Without this, deleting the opening from the generator and regenerating
+    would leave every other asset assertion green.
+    """
+    manifest = load_manifest()
+    palette = {entry["name"]: entry["index"] for entry in manifest["palette"]["entries"]}
+    opening = palette["deep_neutral"]
+
+    items = manifest["sheets"]["characters.png"]["items"]
+    facing = {
+        direction: [i for i in items
+                    if i["character"] == "patient_walking" and i["direction"] == direction]
+        for direction in ("up", "down")
+    }
+    assert len(facing["up"]) == 3 and len(facing["down"]) == 3, "positive control"
+
+    with Image.open(ASSETS / "characters.png") as sheet:
+        def torso(item):
+            # Torso band only: the head sits above y=13, so the dark eye pixels
+            # on forward-facing frames cannot be mistaken for the opening.
+            box = (item["x"], item["y"] + 13, item["x"] + 16, item["y"] + 20)
+            return list(pixels(sheet.crop(box)))
+
+        for item in facing["up"]:
+            count = torso(item).count(opening)
+            assert count > 0, f"no gown opening in the {item['frame']} up frame"
+        for item in facing["down"]:
+            assert torso(item).count(opening) == 0, (
+                "the opening must only show from behind"
+            )

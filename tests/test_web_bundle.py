@@ -198,23 +198,93 @@ def test_env_module_is_correctly_excluded_from_the_web_bundle():
     )
 
 
+# The only lazy native import the browser-shipped tree is allowed: numpy inside
+# WardRenderer.to_rgb_array(), which exists for the Gymnasium rgb_array render
+# mode and never runs in a browser. Keyed by (file, module, enclosing function)
+# so an exemption cannot spread to the rest of the file.
+ALLOWED_LAZY_IMPORTS = {
+    ("ward_cgm_sim/render/pygame_renderer.py", "numpy", "to_rgb_array"),
+}
+
+
+def forbidden_imports(path: Path, relative: str):
+    """Every forbidden import in a file, tagged with its enclosing function.
+
+    An AST walk rather than a text scan: the previous version exempted the
+    whole renderer whenever the file merely contained the string "rgb_array",
+    so a lazy `import torch` anywhere in it would have gone unnoticed.
+    """
+    import ast
+
+    found = []
+
+    def walk(node, scope):
+        for child in ast.iter_child_nodes(node):
+            inner = child.name if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ) else scope
+            if isinstance(child, ast.Import):
+                roots = [alias.name.split(".")[0] for alias in child.names]
+            elif isinstance(child, ast.ImportFrom):
+                roots = [(child.module or "").split(".")[0]]
+            else:
+                roots = []
+            for root in roots:
+                if root in FORBIDDEN:
+                    found.append((relative, root, inner))
+            walk(child, inner)
+
+    walk(ast.parse(path.read_text(), filename=str(path)), None)
+    return found
+
+
 def test_no_web_safe_module_mentions_a_forbidden_import():
-    """Static sweep, to catch a lazily-imported dependency the runtime checks
-    above would miss."""
+    """Static sweep, catching a lazily-imported dependency the runtime checks
+    above would miss because they never call the offending method."""
     package = REPO_ROOT / "ward_cgm_sim"
     offenders = []
-    for path in package.rglob("*.py"):
-        relative = path.relative_to(REPO_ROOT)
+    scanned = 0
+    for path in sorted(package.rglob("*.py")):
         if path.name == "env.py":
             continue  # native-only by design
-        text = path.read_text()
-        for name in FORBIDDEN:
-            for line in text.splitlines():
-                stripped = line.strip()
-                if stripped.startswith(("import ", "from ")) and name in stripped:
-                    # The renderer imports numpy lazily inside rgb_array only,
-                    # which never runs in the browser.
-                    if "rgb_array" in text and path.name == "pygame_renderer.py":
-                        continue
-                    offenders.append(f"{relative}: {stripped}")
+        scanned += 1
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        for entry in forbidden_imports(path, relative):
+            if entry not in ALLOWED_LAZY_IMPORTS:
+                offenders.append(f"{entry[0]}: import {entry[1]} in {entry[2]}()")
+
+    assert scanned > 10, "positive control: the sweep must actually read files"
     assert not offenders, "forbidden imports in web-shipped modules:\n" + "\n".join(offenders)
+
+
+def test_the_static_sweep_catches_a_lazy_import_anywhere_else(tmp_path):
+    """Positive control for the exemption.
+
+    The allowance is for one module, in one function. A forbidden import in a
+    different function of the same file - or a different module in the allowed
+    one - has to still be reported.
+    """
+    sample = tmp_path / "pygame_renderer.py"
+    sample.write_text(
+        "def to_rgb_array(self):\n"
+        "    import numpy as np\n"
+        "    return np\n"
+        "\n"
+        "def somewhere_else(self):\n"
+        "    import torch\n"
+        "    return torch\n"
+        "\n"
+        "def to_rgb_array_evil(self):\n"
+        "    import gymnasium\n"
+        "    return gymnasium\n",
+        encoding="utf-8",
+    )
+    relative = "ward_cgm_sim/render/pygame_renderer.py"
+    found = set(forbidden_imports(sample, relative))
+    assert (relative, "numpy", "to_rgb_array") in found, "the sweep found nothing at all"
+
+    reported = found - ALLOWED_LAZY_IMPORTS
+    assert (relative, "torch", "somewhere_else") in reported
+    assert (relative, "gymnasium", "to_rgb_array_evil") in reported
+    # ...and the genuine exemption is the only thing filtered out.
+    assert len(reported) == len(found) - 1

@@ -115,6 +115,11 @@ class Demo:
         self.finished = False
         self.frame = 0
         self.seed = 1
+        # Whether the hosting page has ever received the readout, and why not.
+        # While this is False the canvas keeps drawing its own compact readout,
+        # so a broken channel never leaves a ward with no numbers at all.
+        self.published_ok = False
+        self.publish_error = ""
 
     def restart(self, telemetry: bool | None = None):
         if telemetry is not None:
@@ -204,23 +209,56 @@ class Demo:
         }
 
     def publish(self) -> bool:
-        """Send the readout to the hosting page. False when there is nowhere to send it.
+        """Send the readout to the hosting page. False when it could not be sent.
 
         The demo is served from its own origin on purpose, so the page cannot
         reach into this frame - a one-way postMessage is the whole channel, and
-        it is addressed to a single origin rather than "*". Any failure is
-        swallowed: the canvas HUD is still there, so a page that never receives
-        anything simply shows nothing extra.
+        it is addressed to a single origin rather than "*".
+
+        Several routes are tried because pygbag's JS bridge exposes a limited
+        surface and which of these works cannot be checked off the browser.
+        The reason the last one failed is kept, and drawn on the canvas, so a
+        silent failure becomes a visible one instead of an empty panel.
         """
         if sys.platform != "emscripten":
+            self.publish_error = "not running in a browser"
             return False
+
+        payload = json.dumps(self.state())
         try:
             import platform as _platform
 
-            _platform.window.parent.postMessage(json.dumps(self.state()), PARENT_ORIGIN)
-            return True
-        except Exception:  # pragma: no cover - browser-only path
+            window = _platform.window
+        except Exception as error:  # pragma: no cover - browser-only path
+            self.publish_error = "no window: %s" % error
             return False
+
+        errors = []
+        for name in ("parent", "top"):
+            try:
+                target = getattr(window, name, None)
+                if target is None:
+                    errors.append("%s missing" % name)
+                    continue
+                target.postMessage(payload, PARENT_ORIGIN)
+                self.published_ok = True
+                self.publish_error = ""
+                return True
+            except Exception as error:  # pragma: no cover - browser-only path
+                errors.append("%s: %s" % (name, error))
+
+        try:  # last resort: hand the string to a helper defined in JS
+            helper = "window.__wardPost=function(s){window.parent.postMessage(s,%r)}" % PARENT_ORIGIN
+            window.eval(helper)
+            window.__wardPost(payload)
+            self.published_ok = True
+            self.publish_error = ""
+            return True
+        except Exception as error:  # pragma: no cover - browser-only path
+            errors.append("eval: %s" % error)
+
+        self.publish_error = "; ".join(errors)[:120]
+        return False
 
     def hint_lines(self) -> list[str]:
         """The on-screen help, as text.
@@ -234,8 +272,9 @@ class Demo:
         telemetry = "telemetry ON" if self.config.telemetry_enabled else "telemetry OFF"
         hints = [
             f"{mode}  -  {telemetry}",
-            "TAB take over / hand back    F5 new shift    F6 toggle telemetry",
-            "arrows/WASD move    M dashboard    C check patient    N notes",
+            "TAB take control or hand back to the nurse    F5 new shift",
+            "F6 toggle telemetry    arrows/WASD move    M dashboard",
+            "C check patient    N notes",
             "K consent    E enrol    R review eligibility    X de-enrol",
             "SPACE alarm    G point-of-care    1 treat hypo    2 treat hyper",
             "Q escalate    T troubleshoot sensor    P support discharge",
@@ -246,26 +285,58 @@ class Demo:
         return hints
 
     def draw_overlay(self) -> None:
+        """Whatever the canvas still has to say for itself.
+
+        When the hosting page is showing the readout and receiving it, the
+        canvas says nothing: the controls and the numbers are all beside it in
+        real text. It speaks up only when there is no page listening, or when
+        the readout is not getting through - a silent channel must not leave a
+        ward with no numbers on it.
+        """
+        if self.external_panel and self.published_ok and not self.finished:
+            return
+
         surface = self.renderer.surface
         font = self.renderer.font_small
-        hints = self.hint_lines()
-        banner = self.finished
 
-        # Solid backing panel: these hints sit over the pale ward floor, and
-        # without it the text is unreadable.
+        if self.external_panel:
+            lines = list(self.fallback_lines())
+        else:
+            lines = self.hint_lines()
+
         line_height = font.get_linesize()
-        height = line_height * len(hints) + 14
-        width = max(font.size(line)[0] for line in hints) + 28
+        height = line_height * len(lines) + 14
+        width = max(font.size(line)[0] for line in lines) + 28
         panel = pygame.Surface((width, height), pygame.SRCALPHA)
         panel.fill((18, 21, 28, 232))
         pygame.draw.rect(panel, (70, 80, 98), panel.get_rect(), width=1)
         surface.blit(panel, (8, surface.get_height() - height - 8))
 
         y = surface.get_height() - height - 3
-        for index, line in enumerate(hints):
-            colour = (255, 214, 110) if (banner and index == 0) else (198, 206, 220)
+        for index, line in enumerate(lines):
+            highlight = self.finished and index == 0
+            colour = (255, 214, 110) if highlight else (198, 206, 220)
             surface.blit(font.render(line, True, colour), (22, y))
             y += line_height
+
+    def fallback_lines(self) -> list[str]:
+        """A compact readout for when the page is not receiving one."""
+        state = self.state()
+        lines = []
+        if self.finished:
+            lines.append("SHIFT COMPLETE - press any key for a new shift")
+        lines += [
+            "%s  step %d/%d  -  beds %d/%d  free %d  queue %d  enrolled %d"
+            % (state["clock"], state["step"], state["steps"], state["beds"],
+               state["capacity"], state["free"], state["queue"], state["enrolled"]),
+            "staff %s  -  return %+.1f  -  %s"
+            % (state["staff"], state["return"], state["lastAction"]),
+        ]
+        if not self.published_ok:
+            lines.append("the panel beside this ward is not receiving: %s"
+                         % (self.publish_error or "no reply yet"))
+        lines.append("academic model - not clinical advice")
+        return lines
 
 
 async def main() -> None:

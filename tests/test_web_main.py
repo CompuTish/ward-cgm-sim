@@ -433,13 +433,15 @@ def test_the_readout_is_addressed_to_one_origin_not_a_wildcard(web_main):
     assert web_main.PARENT_ORIGIN == "https://isabelsmith.me"
     assert web_main.PARENT_ORIGIN.startswith("https://")
 
+    source = WEB_MAIN.read_text(encoding="utf-8")
     calls = [
-        line.strip()
-        for line in WEB_MAIN.read_text(encoding="utf-8").splitlines()
+        line.strip() for line in source.splitlines()
         if "postMessage(" in line and not line.strip().startswith("#")
     ]
-    assert len(calls) == 1, f"expected one postMessage call, found {calls}"
-    assert calls[0].endswith("PARENT_ORIGIN)"), calls[0]
+    assert calls, "positive control: there must be a postMessage call to check"
+    for call in calls:
+        assert "'*'" not in call and '"*"' not in call, f"wildcard target: {call}"
+        assert "PARENT_ORIGIN" in call or "%s" in call, f"untargeted postMessage: {call}"
 
 
 def test_the_readout_is_not_published_every_single_frame(web_main):
@@ -472,3 +474,149 @@ def test_the_fragment_the_page_appends_is_the_one_the_demo_looks_for(web_main):
     assert "ward-cgm-demo.web.app/#" + web_main.EXTERNAL_PANEL_FRAGMENT in markup, (
         "the page does not ask for the external panel with the expected fragment"
     )
+
+
+# --------------------------------------------------------------------------
+# What the canvas still draws once the page owns the readout
+# --------------------------------------------------------------------------
+
+
+def test_the_canvas_stays_quiet_once_the_page_is_receiving(web_main):
+    """No help box over the ward when the page shows the controls in a tab."""
+    demo = web_main.Demo()
+    demo.external_panel = True
+    demo.published_ok = True
+    before = pygame.image.tobytes(demo.renderer.surface, "RGB")
+    demo.draw_overlay()
+    assert pygame.image.tobytes(demo.renderer.surface, "RGB") == before, (
+        "the canvas drew an overlay it no longer needs"
+    )
+
+
+def test_the_canvas_keeps_its_own_help_when_no_page_is_listening(web_main):
+    """Opened directly, the demo is the whole interface and must explain itself."""
+    demo = web_main.Demo()
+    assert demo.external_panel is False
+    before = pygame.image.tobytes(demo.renderer.surface, "RGB")
+    demo.draw_overlay()
+    assert pygame.image.tobytes(demo.renderer.surface, "RGB") != before
+    assert any("WASD" in line for line in demo.hint_lines())
+
+
+def test_a_silent_channel_still_gets_numbers_onto_the_ward(web_main):
+    """The regression this exists for.
+
+    With the page rendering the readout, the canvas HUD is gone. If the
+    readout never arrives the viewer is left with a ward and no numbers, which
+    is exactly what happened. While nothing has got through, the canvas draws a
+    compact readout and says why.
+    """
+    demo = web_main.Demo()
+    demo.external_panel = True
+    demo.published_ok = False
+    demo.publish_error = "parent missing"
+    for _ in range(20):
+        demo.advance(demo.agent.act(demo.engine))
+
+    lines = demo.fallback_lines()
+    joined = " ".join(lines)
+    assert "beds" in joined and "queue" in joined and "enrolled" in joined
+    assert "step %d" % demo.engine.step_index in joined
+    assert "not receiving" in joined and "parent missing" in joined
+    assert "not clinical advice" in joined
+
+    before = pygame.image.tobytes(demo.renderer.surface, "RGB")
+    demo.draw_overlay()
+    assert pygame.image.tobytes(demo.renderer.surface, "RGB") != before, (
+        "nothing was drawn, so the ward has no numbers on it at all"
+    )
+
+
+def test_the_fallback_stops_apologising_once_the_channel_works(web_main):
+    demo = web_main.Demo()
+    demo.external_panel = True
+    demo.published_ok = True
+    assert not any("not receiving" in line for line in demo.fallback_lines())
+
+
+def test_the_end_of_shift_banner_shows_even_when_the_page_owns_the_readout(web_main):
+    """Otherwise a finished shift looks like a frozen one."""
+    demo = web_main.Demo()
+    demo.external_panel = True
+    demo.published_ok = True
+    demo.finished = True
+    assert demo.fallback_lines()[0].startswith("SHIFT COMPLETE")
+    before = pygame.image.tobytes(demo.renderer.surface, "RGB")
+    demo.draw_overlay()
+    assert pygame.image.tobytes(demo.renderer.surface, "RGB") != before
+
+
+def test_publish_records_why_it_could_not_send(web_main):
+    demo = web_main.Demo()
+    assert demo.publish() is False
+    assert demo.publish_error, "a failure with no reason cannot be diagnosed"
+    assert demo.published_ok is False
+
+
+def test_the_help_no_longer_says_hand_back_without_saying_to_whom(web_main):
+    demo = web_main.Demo()
+    hints = " ".join(demo.hint_lines())
+    assert "hand back to the nurse" in hints
+    assert "take over / hand back" not in hints, "the old ambiguous wording is back"
+
+
+def test_publish_reports_every_route_it_tried(web_main, monkeypatch):
+    """The reason is what turns a blank panel into a diagnosis.
+
+    Off the browser publish() returns early, so that path alone never
+    exercises the error handling. Stand in a window whose every route fails.
+    """
+    import types
+
+    class Failing:
+        @property
+        def parent(self):
+            raise RuntimeError("parent blocked")
+
+        @property
+        def top(self):
+            raise RuntimeError("top blocked")
+
+        def eval(self, _source):
+            raise RuntimeError("eval blocked")
+
+    monkeypatch.setattr(web_main.sys, "platform", "emscripten")
+    monkeypatch.setitem(
+        sys.modules, "platform", types.SimpleNamespace(window=Failing())
+    )
+
+    demo = web_main.Demo()
+    assert demo.publish() is False
+    assert demo.published_ok is False
+    for expected in ("parent blocked", "top blocked", "eval blocked"):
+        assert expected in demo.publish_error, demo.publish_error
+
+
+def test_publish_succeeds_through_the_first_route_that_works(web_main, monkeypatch):
+    import types
+
+    sent = []
+
+    class Parent:
+        def postMessage(self, payload, origin):
+            sent.append((payload, origin))
+
+    monkeypatch.setattr(web_main.sys, "platform", "emscripten")
+    monkeypatch.setitem(
+        sys.modules, "platform", types.SimpleNamespace(window=types.SimpleNamespace(parent=Parent()))
+    )
+
+    demo = web_main.Demo()
+    assert demo.publish() is True
+    assert demo.published_ok is True
+    assert demo.publish_error == ""
+    assert len(sent) == 1
+    payload, origin = sent[0]
+    assert origin == web_main.PARENT_ORIGIN
+    import json as _json
+    assert _json.loads(payload)["type"] == "ward-cgm-sim"

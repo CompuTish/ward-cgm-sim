@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the original ward CGM pixel-art asset commission.
+"""Draw the ward CGM pixel-art asset set from scratch.
 
 The output is deliberately deterministic: every pixel is placed on the native
 16 px grid, all sheets share one indexed palette, and the only alpha values are
@@ -633,6 +633,13 @@ def draw_character(role: str, direction: str, frame: str) -> Image.Image:
         rect(d, (3, 11 + bob, 12, 12 + bob), "outline")
         rect(d, (4, 11 + bob, 11, 12 + bob), "patient_gown")
         line(d, [(4, 18 + bob), (11, 18 + bob)], "blanket_main")
+        if direction == "up":
+            # Seen from behind, so the open back of the gown shows: a shadowed
+            # opening down the spine with a tie at each end, as the brief asks.
+            # Interior pixels only, so the silhouette is unchanged.
+            rect(d, (7, 13 + bob, 8, 17 + bob), "deep_neutral")
+            rect(d, (6, 14 + bob, 9, 14 + bob), "deep_neutral")
+            rect(d, (6, 17 + bob, 9, 17 + bob), "deep_neutral")
         stand_x = 14 if direction != "right" else 1
         rect(d, (stand_x, 3, stand_x, 21), "outline")
         rect(d, (stand_x - 1, 3, stand_x + 1, 4), "bed_frame")
@@ -1099,8 +1106,8 @@ def write_readme() -> None:
     (OUT / "README.md").write_text(
         """# Ward CGM simulator pixel assets
 
-This directory contains the commissioned orthogonal top-down pixel-art set
-described in `docs/ASSET_BRIEF.md`.
+This directory contains the orthogonal top-down pixel-art set described in
+`docs/ASSET_BRIEF.md`.
 
 - `tiles.png`: 36 ordered 16×16 tiles, 6×6 with no padding.
 - `characters.png`: 84 ordered 16×24 sprites, 28 rows × 3 columns.
@@ -1118,13 +1125,17 @@ transparent. Outer silhouettes contain no partial alpha. Skin uses indices 28,
 
 ## Originality and licence
 
-The artwork was created from scratch for this repository from the written
-commission brief and a newly generated visual-direction reference. No Nintendo,
-Game Freak, Two Point, Project Hospital, or other commercial-game artwork was
-traced, recoloured, copied, or included.
+Every pixel here is drawn by `scripts/generate_ward_assets.py`, which is part of
+this repository: the sheets are program output rather than imported artwork,
+and re-running the script reproduces them byte for byte. They were written from
+scratch against `docs/ASSET_BRIEF.md`. No Nintendo, Game Freak, Two Point,
+Project Hospital, or other commercial-game artwork was traced, recoloured,
+copied, or included.
 
-To the extent permitted by law, the asset author dedicates these files to the
-public domain under **CC0 1.0 Universal**. See `LICENSE-CC0.txt`.
+The authors of this repository — Isabel Smith and Aatish Thakerar, per the root
+`LICENSE` — therefore hold the rights in this artwork in full, and to the extent
+permitted by law dedicate it to the public domain under **CC0 1.0 Universal**.
+See `LICENSE-CC0.txt`.
 
 Regenerate with:
 
@@ -1139,9 +1150,17 @@ Pillow is development-only; the simulator runtime remains pygame-ce-only.
     (OUT / "LICENSE-CC0.txt").write_text(
         """CC0 1.0 Universal
 
-To the extent possible under law, the person who associated CC0 with these
-pixel-art assets has waived all copyright and related or neighboring rights to
-the assets.
+The pixel-art assets in this directory (tiles.png, characters.png,
+patients_in_bed.png, overlays_bed.png, overlays_effect.png, and the
+accompanying assets-index.json) were created for this repository by its
+authors, Isabel Smith and Aatish Thakerar, and are drawn in full by
+scripts/generate_ward_assets.py, which is part of this repository. No
+third-party artwork was traced, copied, recoloured or otherwise incorporated,
+so the authors hold the relevant rights in their entirety.
+
+To the extent possible under law, Isabel Smith and Aatish Thakerar have waived
+all copyright and related or neighboring rights to these assets and dedicate
+them to the public domain under CC0 1.0 Universal.
 
 Full legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
 """,

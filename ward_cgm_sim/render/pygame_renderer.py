@@ -32,7 +32,7 @@ ALARM_COLOURS = {
     AlarmKind.RAPID_RISE: (206, 190, 90),
 }
 
-# The commissioned overlay for each alarm kind. Used when the art is present;
+# The overlay for each alarm kind. Used when the art is present;
 # the pulsing rectangle below is the fallback.
 ALARM_OVERLAYS = {
     AlarmKind.SEVERE_HYPO: "alarm_severe_hypoglycaemia",
@@ -280,13 +280,13 @@ class WardRenderer:
         return True
 
     def _blit_person(self, role: str, pos, direction: str, phase: int,
-                     skin: int = 0) -> None:
+                     skin: int = 0, blanket=None) -> None:
         """Draw a character standing on the tile at `pos`.
 
         The artwork is a half-tile taller than a tile so heads overlap what is
         behind them; the offset puts the feet back on the floor.
         """
-        sprite = self.sprites.person(role, direction, phase, skin)
+        sprite = self.sprites.person(role, direction, phase, skin, blanket)
         self.surface.blit(sprite, (pos[0], pos[1] + self.sprites.character_y_offset))
 
     def _face(self, key, dx: int, dy: int, default: str = "down") -> str:
@@ -302,11 +302,14 @@ class WardRenderer:
         """Patients waiting for a bed, queued outside the entrance."""
         engine = self.engine
         ex, ey = engine.ward_map.entrance_tile
-        for i, _patient in enumerate(engine.flow.queue[:8]):
+        for i, patient in enumerate(engine.flow.queue[:8]):
             px = ex * TILE - (i % 4) * (TILE - u(4)) - u(6)
             py = ey * TILE + (i // 4) * u(10)
             # Waiting to be let in, so facing the ward doors.
-            self._blit_person("patient", (px, py), "up", (self.frame // 6) + i, i)
+            self._blit_person(
+                "patient", (px, py), "up", (self.frame // 6) + i,
+                patient.patient_id, patient.patient_id,
+            )
 
     def _draw_walking_patients(self) -> None:
         engine = self.engine
@@ -327,7 +330,8 @@ class WardRenderer:
             dx, dy = (ex - bx, ey - by) if leaving else (bx - ex, by - ey)
             direction = self._face(("patient", patient.patient_id), dx, dy)
             self._blit_person(
-                "patient", (px, py), direction, self.frame // 6, patient.patient_id
+                "patient", (px, py), direction, self.frame // 6,
+                patient.patient_id, patient.patient_id,
             )
 
     def _draw_background_staff(self) -> None:

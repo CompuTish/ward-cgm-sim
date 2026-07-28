@@ -1,7 +1,15 @@
 CC0 1.0 Universal
 
-To the extent possible under law, the person who associated CC0 with these
-pixel-art assets has waived all copyright and related or neighboring rights to
-the assets.
+The pixel-art assets in this directory (tiles.png, characters.png,
+patients_in_bed.png, overlays_bed.png, overlays_effect.png, and the
+accompanying assets-index.json) were created for this repository by its
+authors, Isabel Smith and Aatish Thakerar, and are drawn in full by
+scripts/generate_ward_assets.py, which is part of this repository. No
+third-party artwork was traced, copied, recoloured or otherwise incorporated,
+so the authors hold the relevant rights in their entirety.
+
+To the extent possible under law, Isabel Smith and Aatish Thakerar have waived
+all copyright and related or neighboring rights to these assets and dedicate
+them to the public domain under CC0 1.0 Universal.
 
 Full legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode

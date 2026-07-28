@@ -38,21 +38,40 @@ WEB_SAFE_MODULES = [
     "ward_cgm_sim.agents",
     "ward_cgm_sim.agents.random_agent",
     "ward_cgm_sim.agents.rule_based",
+    # render/ ships to the browser too. pygame_renderer imports numpy lazily
+    # inside to_rgb_array(), which never runs there, so importing the module
+    # itself has to stay clean.
+    "ward_cgm_sim.render",
+    "ward_cgm_sim.render.sprites",
+    "ward_cgm_sim.render.pygame_renderer",
 ]
 
+# The block happens when the module is *executed*, not when it is looked up.
+# pygame asks `find_spec("numpy")` at import time purely to discover whether
+# numpy exists, and refusing the lookup breaks pygame itself - which would fail
+# the whole render layer for a question nobody asked. Only a real `import`
+# reaches the loader, so this still catches exactly what it is meant to.
 _GUARD = """
 import sys
+from importlib.machinery import ModuleSpec
+
+_FORBIDDEN = {forbidden!r}
+
+class _Loader:
+    def __init__(self, name):
+        self.name = name
+    def create_module(self, spec):
+        raise ImportError(
+            "web bundle imported '" + self.name + "', which is not available in "
+            "the pygbag runtime"
+        )
+    def exec_module(self, module):
+        pass
 
 class _Blocked:
-    def find_module(self, name, path=None):
-        return self.find_spec(name, path)
     def find_spec(self, name, path=None, target=None):
-        root = name.split('.')[0]
-        if root in {forbidden!r}:
-            raise ImportError(
-                "web bundle imported '" + name + "', which is not available in "
-                "the pygbag runtime"
-            )
+        if name.split('.')[0] in _FORBIDDEN:
+            return ModuleSpec(name, _Loader(name))
         return None
 
 sys.meta_path.insert(0, _Blocked())
@@ -110,6 +129,40 @@ print("OK", steps)
 """
     result = _run_guarded(body)
     assert result.returncode == 0, f"simulation failed in browser runtime:\n{result.stderr}"
+    assert "OK" in result.stdout
+
+
+def test_the_art_loads_and_draws_without_native_dependencies():
+    """Importing the renderer is not enough - the sheets load on construction.
+
+    `SpriteSheet()` reads five PNGs and a JSON manifest and does palette
+    surgery on them. That is the code the browser actually runs, and it must
+    manage it with the standard library plus pygame-ce alone, and without a
+    display.
+    """
+    body = """
+import os
+os.environ['SDL_VIDEODRIVER'] = 'dummy'
+import pygame
+pygame.init()
+from ward_cgm_sim.config import SimConfig
+from ward_cgm_sim.core.engine import WardEngine
+from ward_cgm_sim.render.pygame_renderer import WardRenderer
+
+engine = WardEngine(SimConfig(), seed=2)
+renderer = WardRenderer(engine, headless=True)
+assert renderer.sprites.using_assets, "the art did not load"
+for _ in range(5):
+    renderer.draw()
+    engine.step(0)
+seen = {renderer.surface.get_at((x, y))[:3]
+        for x in range(0, renderer.width, 5)
+        for y in range(0, renderer.height, 5)}
+assert len(seen) > 20, "ward came out blank: %d colours" % len(seen)
+print("OK", len(seen))
+"""
+    result = _run_guarded(body)
+    assert result.returncode == 0, f"the art cannot load in the browser runtime:\n{result.stderr}"
     assert "OK" in result.stdout
 
 

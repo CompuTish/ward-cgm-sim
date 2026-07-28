@@ -1,4 +1,4 @@
-"""Contract tests for the commissioned pixel-art sheets.
+"""Contract tests for the pixel-art sheets.
 
 These assertions verify the durable renderer-facing contract: exact packing,
 indexed recolour regions, hard alpha, shared palette limits, and distinct role
@@ -35,7 +35,7 @@ def test_all_required_asset_sheets_exist_with_exact_dimensions():
         "overlays_bed.png": (176, 16),
         "overlays_effect.png": (16, 24),
     }
-    assert len(expected) == 5, "positive control: commission defines five sheets"
+    assert len(expected) == 5, "positive control: the brief defines five sheets"
     for filename, size in expected.items():
         path = ASSETS / filename
         assert path.is_file(), filename

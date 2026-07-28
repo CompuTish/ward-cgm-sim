@@ -75,6 +75,39 @@ def verify() -> None:
     print("import-safety check passed")
 
 
+# The five sheets plus the manifest the renderer reads them through.
+REQUIRED_ART = {
+    "tiles.png",
+    "characters.png",
+    "patients_in_bed.png",
+    "overlays_bed.png",
+    "overlays_effect.png",
+    "assets-index.json",
+}
+
+
+def verify_bundle(apk: Path) -> None:
+    """Fail the build if the artwork did not make it into the archive.
+
+    pygbag packages a directory tree, so a change to what gets vendored can
+    leave the sheets behind and produce a demo that boots and draws an empty
+    ward. Checking the source directory proves nothing: only the archive ships.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(apk) as bundle:
+        packaged = {
+            Path(name).name for name in bundle.namelist() if "render/assets/" in name
+        }
+    missing = REQUIRED_ART - packaged
+    if missing:
+        sys.exit(
+            f"\nthe built bundle is missing artwork: {sorted(missing)}\n"
+            "the demo would load and draw an empty ward."
+        )
+    print(f"bundle contains all {len(REQUIRED_ART)} art files")
+
+
 def serve_build() -> None:
     """Serve the built output over a local threading HTTP server.
 
@@ -106,6 +139,7 @@ def build(serve: bool) -> None:
         print(f"\nbuild output: {output.relative_to(REPO_ROOT)}")
         for item in sorted(output.iterdir()):
             print(f"  {item.name}  ({item.stat().st_size / 1024:.0f} KB)")
+        verify_bundle(output / "web.apk")
 
 
 # Injected into the generated page. The canvas is rendered at a fixed native

@@ -1,4 +1,4 @@
-"""Ward artwork: the commissioned pixel-art sheets, with a procedural fallback.
+"""Ward artwork: the pixel-art sheets, with a procedural fallback.
 
 Two sources, one API. `render/assets/` holds original CC0 pixel art - an
 orthogonal top-down tileset, a 7-character sheet and a set of clinical status
@@ -180,7 +180,7 @@ def make_person(
 
     Role is read from the ATTRIBUTE - cap, coat, mask - not from tunic colour,
     which is indistinguishable at this size and invisible to a colourblind
-    viewer. See docs/ASSET_BRIEF.md; the commissioned art follows the same rule
+    viewer. See docs/ASSET_BRIEF.md; the sheets in assets/ follow the same rule
     and these placeholders are a stand-in for it.
     """
     surf = _surface()
@@ -253,6 +253,20 @@ def make_patient_in_bed(skin_index: int = 0, blanket_index: int = 0) -> pygame.S
     return surf
 
 
+def _to_rgba(surface: pygame.Surface) -> pygame.Surface:
+    """Copy into an explicit 32-bit RGBA surface.
+
+    Not `convert_alpha()`: that adopts the *display* format and raises when
+    there is no display, which is exactly the Gymnasium `rgb_array` path -
+    `WardRenderer(headless=True)` never calls `set_mode`. Blitting onto a
+    fresh SRCALPHA surface carries the colour-keyed transparency across
+    without needing a display at all.
+    """
+    out = pygame.Surface(surface.get_size(), pygame.SRCALPHA, 32)
+    out.blit(surface, (0, 0))
+    return out
+
+
 def _recolour(source: pygame.Surface, swaps) -> pygame.Surface:
     """Return a copy of `source` with the swapped palette regions applied.
 
@@ -269,19 +283,36 @@ def _recolour(source: pygame.Surface, swaps) -> pygame.Surface:
     if out.get_bitsize() == 8:
         for index, _baked, replacement in swaps:
             out.set_palette_at(index, pygame.Color(replacement))
-        return out.convert_alpha()
+        return _to_rgba(out)
 
-    out = out.convert_alpha()
-    if swaps:
+    out = _to_rgba(out)
+    if not swaps:
+        return out
+
+    pairs = [(pygame.Color(baked), pygame.Color(new)) for _i, baked, new in swaps]
+    try:
         pixels = pygame.PixelArray(out)
-        for _index, baked, replacement in swaps:
-            pixels.replace(pygame.Color(baked), pygame.Color(replacement))
-        pixels.close()
+    except (AttributeError, NotImplementedError, pygame.error):
+        # Last resort for a runtime without PixelArray. Slow, but it only ever
+        # runs on sheets a few thousand pixels across, and a slow ward beats a
+        # blank one.
+        width, height = out.get_size()
+        lookup = {tuple(old): new for old, new in pairs}
+        for x in range(width):
+            for y in range(height):
+                replacement = lookup.get(tuple(out.get_at((x, y))))
+                if replacement is not None:
+                    out.set_at((x, y), replacement)
+        return out
+
+    for old, new in pairs:
+        pixels.replace(old, new)
+    pixels.close()
     return out
 
 
 class AssetPack:
-    """The commissioned sheets, sliced and scaled to TILE.
+    """The art sheets, sliced and scaled to TILE.
 
     Raises if the sheets are present but unreadable. That is deliberate: a
     missing `assets/` directory is the supported fallback path, but a corrupt
@@ -316,7 +347,7 @@ class AssetPack:
         rect = pygame.Rect(item["x"], item["y"], item["width"], item["height"])
         piece = sheet.subsurface(rect).copy()
         if piece.get_bitsize() == 8:
-            piece = piece.convert_alpha()
+            piece = _to_rgba(piece)
         # scale(), unlike smoothscale(), is nearest-neighbour - it keeps the
         # pixel grid hard, which is the whole point of pixel art.
         return pygame.transform.scale(
@@ -324,7 +355,7 @@ class AssetPack:
         )
 
     def _named(self, spec: dict, filename: str) -> dict:
-        sheet = self._load(filename).convert_alpha()
+        sheet = _to_rgba(self._load(filename))
         return {item["name"]: self._cut(sheet, item) for item in spec["items"]}
 
     # -- palette regions ---------------------------------------------------
@@ -350,14 +381,39 @@ class AssetPack:
 
     # -- sheets ------------------------------------------------------------
     def _characters(self, spec: dict) -> dict:
-        raw = self._load("characters.png")
+        self._raw_characters = self._load("characters.png")
+        self._character_items = spec["items"]
+        self._patient_cache: dict = {}
         out = {}
         for skin in range(self.n_skins):
-            sheet = _recolour(raw, self._skin_swaps(skin))
+            sheet = _recolour(self._raw_characters, self._skin_swaps(skin))
             for item in spec["items"]:
                 key = (item["character"], item["direction"], item["frame"], skin)
                 out[key] = self._cut(sheet, item)
         return out
+
+    def patient_frames(self, skin: int, blanket: int) -> dict:
+        """Walking-patient frames whose gown trim matches their bed blanket.
+
+        Built on demand rather than up front: 5 skins x 8 blankets x 12 frames
+        would be 480 surfaces to cover the handful of patients who are out of
+        bed at any moment. One recolour pass yields all twelve frames for a
+        combination, and the result is cached for the rest of the shift.
+        """
+        key = (skin, blanket)
+        frames = self._patient_cache.get(key)
+        if frames is None:
+            sheet = _recolour(
+                self._raw_characters,
+                self._skin_swaps(skin) + self._blanket_swaps(blanket),
+            )
+            frames = {
+                (item["direction"], item["frame"]): self._cut(sheet, item)
+                for item in self._character_items
+                if item["character"] == "patient_walking"
+            }
+            self._patient_cache[key] = frames
+        return frames
 
     def _patients(self, spec: dict) -> list:
         raw = self._load("patients_in_bed.png")
@@ -436,12 +492,22 @@ class SpriteSheet:
         return self._floor[1] if name == "ward_floor_mid" else self._floor[0]
 
     def person(self, role: str, direction: str = "down", phase: int = 0,
-               skin: int = 0) -> pygame.Surface:
-        """One character frame. Direction is ignored by the fallback."""
+               skin: int = 0, blanket=None) -> pygame.Surface:
+        """One character frame. Direction is ignored by the fallback.
+
+        `blanket` applies to patients only: their gown trim carries the same
+        colour as their bed blanket, so a patient walking to theatre is still
+        recognisably the patient who was in bed 12.
+        """
         if not self.using_assets:
             return self._people[role][phase % 2]
         frame = WALK_CYCLE[phase % len(WALK_CYCLE)]
         character = ROLE_CHARACTERS[role]
+        if blanket is not None and character == "patient_walking":
+            frames = self.pack.patient_frames(
+                skin % self.n_skins, blanket % self.n_blankets
+            )
+            return frames[(direction, frame)]
         return self.pack.characters[(character, direction, frame, skin % self.n_skins)]
 
     def patient_in_bed(self, skin: int, blanket: int) -> pygame.Surface:

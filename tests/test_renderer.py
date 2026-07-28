@@ -1,6 +1,6 @@
 """Tests for the renderer and the artwork it draws with.
 
-The renderer had no coverage at all until the commissioned sheets were wired
+The renderer had no coverage at all until the art sheets were wired
 in, which meant a full suite could pass while the demo drew nothing. These
 cover the two things that can silently go wrong: the art failing to load (and
 degrading to rectangles unnoticed), and the palette swap failing (leaving every
@@ -12,8 +12,10 @@ viewer a clinical fact the policy has to spend a step learning.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import types
 import sys
 from pathlib import Path
 
@@ -64,7 +66,7 @@ def colours(surface: pygame.Surface, rect: pygame.Rect) -> set:
     }
 
 
-def test_a_full_shift_renders_with_the_commissioned_art():
+def test_a_full_shift_renders_with_the_real_art():
     renderer = run_shift()
     assert renderer.sprites.using_assets, "the sheets in render/assets should be used"
 
@@ -116,11 +118,82 @@ def test_every_patient_identity_is_visibly_distinct():
     assert len(faces) == sheet.n_skins, "skin tones are not being swapped"
 
 
+def test_all_three_recolour_routes_agree(monkeypatch):
+    """The browser runtime decides which route runs, so all three must match.
+
+    `_recolour` repaints an indexed palette entry when the loaded surface is
+    8-bit, matches on the baked colour via PixelArray when it is not, and falls
+    back to a per-pixel loop if PixelArray is unavailable. Only the first is
+    exercised on this machine, so the other two are pinned here.
+    """
+    from ward_cgm_sim.render import sprites
+
+    indexed = pygame.image.load(str(sprites.ASSETS_DIR / "patients_in_bed.png"))
+    assert indexed.get_bitsize() == 8, "positive control: the sheet is indexed"
+    truecolour = indexed.convert_alpha()
+    assert truecolour.get_bitsize() != 8
+
+    # Repaint the baked dusty-blue blanket to the sage variant.
+    swaps = [(36, "#7A98BA", "#8CA68C"), (37, "#657F9E", "#718A71")]
+
+    via_palette = pygame.image.tobytes(sprites._recolour(indexed, swaps), "RGBA")
+    via_pixelarray = pygame.image.tobytes(sprites._recolour(truecolour, swaps), "RGBA")
+
+    monkeypatch.delattr(pygame, "PixelArray")
+    via_loop = pygame.image.tobytes(sprites._recolour(truecolour, swaps), "RGBA")
+
+    baseline = pygame.image.tobytes(truecolour, "RGBA")
+    assert via_palette != baseline, "positive control: the swap must change pixels"
+    assert via_palette == via_pixelarray
+    assert via_palette == via_loop
+
+
 def test_a_patient_keeps_the_same_appearance_all_shift():
     sheet = SpriteSheet()
     first = sheet.patient_in_bed(11, 11)
     assert first is sheet.patient_in_bed(11, 11)
     assert first is not sheet.patient_in_bed(12, 12)
+
+
+def test_a_walking_patient_carries_their_bed_blanket_colour():
+    """You must be able to follow one patient from their bed to the door.
+
+    The gown trim is the same indexed region as the blanket, so a walking
+    patient that ignores it comes out dusty blue for everyone - which is what
+    happened before this was threaded through `person()`.
+    """
+    sheet = SpriteSheet()
+    manifest = json.loads(
+        (sheet.pack.directory / "assets-index.json").read_text(encoding="utf-8")
+    )
+    variants = manifest["palette"]["blanket_indices"]["variants"]
+    assert len(variants) == 8, "positive control: eight blankets to tell apart"
+
+    def trim_colours(blanket: int) -> set:
+        sprite = sheet.person("patient", "down", 1, skin=0, blanket=blanket)
+        return {
+            sprite.get_at((x, y))[:3]
+            for x in range(sprite.get_width())
+            for y in range(sprite.get_height())
+            if sprite.get_at((x, y))[3] > 0
+        }
+
+    for index, variant in enumerate(variants):
+        expected = pygame.Color(variant["main"])[:3]
+        assert expected in trim_colours(index), f"{variant['name']} trim missing"
+
+    # And no two patients look alike.
+    rendered = {
+        pygame.image.tobytes(sheet.person("patient", "down", 1, 0, b), "RGBA")
+        for b in range(len(variants))
+    }
+    assert len(rendered) == len(variants)
+
+    # Staff are unaffected - a nurse has no blanket.
+    nurse = pygame.image.tobytes(sheet.person("nurse", "down", 1, 0), "RGBA")
+    assert nurse == pygame.image.tobytes(
+        sheet.person("nurse", "down", 1, 0, blanket=3), "RGBA"
+    )
 
 
 def test_each_direction_and_walk_frame_is_a_distinct_sprite():
@@ -199,6 +272,33 @@ def test_the_map_never_reveals_discharge_readiness_the_agent_has_not_learned():
     assert hidden != learned, "the overlay must appear once the fact is known"
 
 
+def test_rgb_array_rendering_works_without_a_display():
+    """The Gymnasium `rgb_array` path never calls `display.set_mode()`.
+
+    `convert_alpha()` adopts the display format and raises without one, so
+    loading the art that way broke `env.render()` in any clean process. Every
+    other test in this file installs a video mode in a fixture, which hid it -
+    hence the subprocess.
+    """
+    script = (
+        "import os;os.environ['SDL_VIDEODRIVER']='dummy';"
+        "from ward_cgm_sim.env import WardCGMTelemetryEnv;"
+        "e=WardCGMTelemetryEnv(render_mode='rgb_array');e.reset(seed=1);"
+        "f=e.render();"
+        "assert f.shape[2]==3, f.shape;"
+        "print('OK', f.shape[0], f.shape[1], len({tuple(p) for r in f[::7] for p in r[::7]}))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    tag, height, width, distinct = result.stdout.strip().splitlines()[-1].split()
+    assert tag == "OK"
+    assert (int(height), int(width)) == (672, 1140)
+    # Positive control: a frame that raised, or drew nothing, is not a pass.
+    assert int(distinct) > 20, "the frame came back nearly blank"
+
+
 def test_the_render_is_identical_across_processes():
     """Staff drift must not depend on PYTHONHASHSEED.
 
@@ -265,6 +365,32 @@ def test_the_renderer_asks_for_tiles_that_exist():
     assert len(asked) > 5, "positive control: the ward uses a variety of tiles"
     available = set(renderer.sprites.pack.tiles)
     assert asked <= available, f"missing tiles: {sorted(asked - available)}"
-    # The alarm state of the board is a second monitor tile, only reachable
-    # when something is alarming, so check it explicitly rather than by walking.
-    assert "desk_monitor_alarm" in available
+
+
+def test_the_station_board_shows_both_monitor_states():
+    """Walking a quiet ward only ever reaches the calm monitor tile."""
+    renderer = run_shift(steps=1)
+    station = renderer.engine.ward_map.station_tiles
+    monitor = (min(x for x, _ in station) + 2, min(y for _, y in station))
+
+    renderer.engine.active_alarms.clear()
+    renderer.engine.cfg.telemetry_enabled = True
+    assert renderer._alarm_showing() is False
+    assert renderer._station_name(*monitor) == "desk_monitor_on"
+
+    renderer.engine.active_alarms[0] = types.SimpleNamespace(
+        kind=next(iter(AlarmKind)), resolved_step=None
+    )
+    assert renderer._alarm_showing() is True
+    assert renderer._station_name(*monitor) == "desk_monitor_alarm"
+
+    # Two genuinely different pictures, not the same tile named twice.
+    tiles = renderer.sprites.pack.tiles
+    assert pygame.image.tobytes(tiles["desk_monitor_on"], "RGBA") != pygame.image.tobytes(
+        tiles["desk_monitor_alarm"], "RGBA"
+    )
+
+    # Telemetry off: the board stays calm even with an alarm object present,
+    # because in that arm there is no dashboard to light up.
+    renderer.engine.cfg.telemetry_enabled = False
+    assert renderer._station_name(*monitor) == "desk_monitor_on"

@@ -169,10 +169,13 @@ docs/POMDP.md     the formal specification
 
 Code is MIT.
 
-The artwork in `ward_cgm_sim/render/assets/` is original and released under
-[CC0-1.0](ward_cgm_sim/render/assets/LICENSE-CC0.txt). It was drawn for this
-project against `docs/ASSET_BRIEF.md` and is regenerated deterministically by
-`scripts/generate_ward_assets.py`; nothing in it is traced, derived or
-recoloured from any commercial game. If the sheets are removed the renderer
-falls back to the procedural rectangles in `render/sprites.py`, so the
-simulator has no hard dependency on them.
+The artwork in `ward_cgm_sim/render/assets/` is drawn in full by
+`scripts/generate_ward_assets.py` in this repository — the sheets are program
+output, not imported artwork, and re-running the script reproduces them byte for
+byte. It was written from scratch against `docs/ASSET_BRIEF.md`; nothing in it
+is traced, derived or recoloured from any commercial game. The repository
+authors named in `LICENSE` hold the rights in it and release it under
+[CC0-1.0](ward_cgm_sim/render/assets/LICENSE-CC0.txt).
+
+If the sheets are removed the renderer falls back to the procedural rectangles
+in `render/sprites.py`, so the simulator has no hard dependency on them.

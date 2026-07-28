@@ -52,7 +52,15 @@ python -c "from gymnasium.utils.env_checker import check_env; \
            check_env(WardCGMTelemetryEnv())"       # Gymnasium API contract
 python scripts/run_baseline.py --episodes 10       # full shifts, end to end
 python scripts/evaluate.py --episodes 30           # telemetry vs routine monitoring
+python scripts/build_web.py                        # vendors, verifies imports, builds
 ```
+
+The browser entrypoint counts as a layer. `web/main.py` owns the keyboard and the readout it
+publishes to a hosting page, and it had no tests at all until `D` shipped bound to the
+dashboard while the help promised WASD movement. `tests/test_web_main.py` reads the project
+page out of the parent repository, so **editing that page means running this suite** - it
+checks the URL fragment both sides agree on, and that every element id the page's listener
+writes to still exists.
 
 What each layer must prove:
 

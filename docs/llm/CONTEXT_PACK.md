@@ -174,7 +174,46 @@ map and will catch a name that is not there.
 
 ---
 
-## 7. Calibration status
+## 7. The browser bridge
+
+`web/main.py` is the browser entrypoint and owns two things the rest of the
+repo does not: the keyboard map, and the readout it publishes to whatever page
+is hosting it.
+
+**It had no tests at all until recently, and that is how `D` shipped bound to
+`CHECK_DASHBOARD` while the on-screen help promised WASD movement** - the nurse
+simply could not walk right. Anything that couples the keys, the help text and
+the page's control list is worth a test; `tests/test_web_main.py` has them.
+
+- **`#panel=external` in the URL** tells the demo the page is rendering the
+  readout, so it drops its in-canvas HUD and gives the whole canvas to the
+  ward. A URL fragment rather than frame detection, because it is
+  deterministic and fails safe: no fragment, or an unreadable one, means the
+  HUD stays. The page and the demo must agree on that string - a test pins it.
+- **`Demo.state()` republishes `visible_alarms()`** and derives no visibility
+  rule of its own. The engine already owns that rule, and a second copy would
+  be free to drift. The same POMDP boundary applies here as in the renderer:
+  the page may be told what the agent has learned, never hidden truth.
+- **Sent is not delivered.** `postMessage` does not raise when the window it
+  reaches is not at the origin it was addressed to, so a send can succeed while
+  nothing arrives - which is exactly what happened, leaving the page blank and
+  the demo convinced it had done its job. The page acknowledges, and only the
+  acknowledgement sets `published_ok`. Until then the canvas draws a compact
+  readout and says why. **A broken channel must degrade to a smaller readout,
+  never to none.**
+- **The origin is pinned** to the hosting page, never `"*"`. The demo lives on
+  its own origin precisely so the third-party WASM runtime cannot reach the
+  portfolio; this one-way channel is the only thing that crosses, and the page
+  treats everything arriving as hostile input.
+
+Two files in two repositories have to agree about all of this. The tests read
+the page directly and check the fragment, and check that every id its script
+looks up exists in its markup - the readout was silently dropped for a while
+because a restructure removed an id the listener guarded on.
+
+---
+
+## 8. Calibration status
 
 **No parameter in this model is derived from primary data.** The population is
 deliberately configured to increase eligible-patient and event counts, because
@@ -189,7 +228,7 @@ most influential.
 
 ---
 
-## 8. Known unfinished work
+## 9. Known unfinished work
 
 - **Runtime vendoring** (`scripts/build_web.py --vendor-runtime`) downloads the
   ~25 MB pygbag runtime to serve it same-origin, which would remove the
@@ -206,11 +245,13 @@ most influential.
   renderer does not have. Placing furniture would need `ward_map` to carry it,
   otherwise the agent walks through chairs.
 - **No trained policy.** `scripts/train_ppo.py` is a worked example, not a
-  result.
+  result. Nothing in this repository has learned anything: the demo is driven
+  by the rule-based comparator, and the project page says so plainly. Do not
+  let any copy imply otherwise.
 
 ---
 
-## 9. Deployment facts
+## 10. Deployment facts
 
 - pygbag must be **≥ 0.9.3**. 0.9.2 fails to boot over HTTP/2 with
   `Cannot read properties of undefined (reading 'statSync')` - it works locally

@@ -43,9 +43,17 @@ Both have been broken before, both produced results that looked fine:
 ## 5. Prove your tests bite
 
 When you add a test, reintroduce the bug it targets, confirm the test fails,
-then restore. Four tests in this repository's history passed against the very
-defects they were written for. Assertions on internal state, and universal
-claims over collections that might be empty, are the usual culprits.
+then restore. Do this every time. Tests in this repository have repeatedly
+passed against the very defect they were written for, and every one was found
+this way and no other. The recurring causes:
+
+- asserting on internal state the bug does not move
+- a universal claim over a collection that turns out to be empty
+- a condition the code path can never reach, so the assertion is vacuous
+  (with telemetry off no alarm is ever raised, so "no alarms were published"
+  was true whether or not the rule existed)
+- checking pixels when the thing that changed is off-surface, so a broken
+  renderer draws an identical frame
 
 ## 6. Before you say you are done
 
@@ -65,4 +73,5 @@ claims over collections that might be empty, are the usual culprits.
 | Change what the agent can see | `core/observations.py` → tests in `tests/test_observability.py` |
 | Change the art | `render/assets/assets-index.json` is the contract; load it in `render/sprites.py`, draw it in `render/pygame_renderer.py`. Read CONTEXT_PACK §6 first - **never** edit `web/ward_cgm_sim/`, which is generated |
 | Regenerate the art | `scripts/generate_ward_assets.py` (dev-only, needs Pillow); output must stay byte-identical unless you meant to change it |
+| Change the keyboard, or the readout the page shows | `web/main.py`, then `tests/test_web_main.py` - and the control list and ids in the project page, which the tests read. See CONTEXT_PACK §7 |
 | Rebuild the web demo | `python scripts/build_web.py` (add `--serve` to preview the built output), then deploy per the parent repo's CLAUDE.md |

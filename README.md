@@ -53,11 +53,11 @@ python -m pytest
 
 ### Controls
 
-Arrow keys or WASD to walk. Bedside actions apply to the bed you are standing
-next to. Checking the dashboard works anywhere but costs a step, and what you
+Arrow keys or WASD to walk - `D` is movement, so the dashboard is on `M`.
+Bedside actions apply to the bed you are standing next to. Checking the dashboard works anywhere but costs a step, and what you
 learn goes stale; standing at the nurse station refreshes it for free.
 
-`D` dashboard · `C` check patient · `N` notes · `K` consent · `E` enrol ·
+`M` dashboard · `C` check patient · `N` notes · `K` consent · `E` enrol ·
 `R` review eligibility · `X` de-enrol · `SPACE` respond to alarm ·
 `G` point-of-care glucose · `1` treat hypo · `2` treat hyper · `Q` escalate ·
 `F1`–`F4` ask HCA/nurse/doctor/surgeon · `T` troubleshoot sensor ·
@@ -144,6 +144,26 @@ assumptions that conclusion depends on.
 it imports without any native dependency, and builds a WebAssembly bundle with
 pygbag. Add `--serve` to run it locally.
 
+### Embedding it in a page
+
+Opened directly the demo draws its own HUD and help. Load it with
+`#panel=external` in the URL and it drops both, gives the whole canvas to the
+ward, and posts its readout to the hosting page instead - the same numbers, as
+real text rather than stretched canvas pixels.
+
+That readout crosses an origin boundary, so it is deliberately narrow:
+
+- one way, addressed to a single origin rather than `"*"`
+- it republishes `visible_alarms()` and adds nothing, so the page cannot be
+  shown a clinical fact the policy has to spend a step learning
+- **sent is not delivered.** `postMessage` does not raise when the window it
+  reaches is not at the origin it was addressed to, so the page acknowledges
+  and only that counts. Until it does, the canvas keeps a compact readout on
+  the ward: a broken channel degrades to a smaller readout, never to none.
+
+`isabelsmith.me/projects/ward-sim/` is the reference host. It renders the
+readout, a control list and a key to every character and marker, all in HTML.
+
 The core is **standard library plus pygame-ce only** so the same code runs
 natively and in the browser. `ward_cgm_sim/env.py` (which needs gymnasium and
 numpy) is deliberately excluded from the bundle;
@@ -161,7 +181,7 @@ ward_cgm_sim/
   render/         pixel-art sheets (assets/) + top-down renderer
   agents/         random and rule-based baselines
 scripts/          play, run_baseline, evaluate, train_ppo, build_web
-tests/            191 tests; see CLAUDE.md for what each layer must prove
+tests/            386 tests; see CLAUDE.md for what each layer must prove
 docs/POMDP.md     the formal specification
 ```
 

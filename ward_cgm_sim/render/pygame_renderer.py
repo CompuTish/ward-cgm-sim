@@ -32,11 +32,22 @@ ALARM_COLOURS = {
     AlarmKind.RAPID_RISE: (206, 190, 90),
 }
 
+# The commissioned overlay for each alarm kind. Used when the art is present;
+# the pulsing rectangle below is the fallback.
+ALARM_OVERLAYS = {
+    AlarmKind.SEVERE_HYPO: "alarm_severe_hypoglycaemia",
+    AlarmKind.HYPO: "alarm_hypoglycaemia",
+    AlarmKind.HYPER: "alarm_hyperglycaemia",
+    AlarmKind.RAPID_FALL: "alarm_rapid_fall",
+    AlarmKind.RAPID_RISE: "alarm_rapid_rise",
+}
+
 
 class WardRenderer:
     """Draws the engine state. One instance per window."""
 
-    def __init__(self, engine, headless: bool = False, scale: int = 1):
+    def __init__(self, engine, headless: bool = False, scale: int = 1,
+                 assets_dir=None):
         self.engine = engine
         self.scale = scale
         self.headless = headless
@@ -57,7 +68,9 @@ class WardRenderer:
             self.surface = pygame.display.set_mode((self.width, self.height))
             pygame.display.set_caption("Ward CGM telemetry simulator - academic model")
 
-        self.sprites = SpriteSheet()
+        # assets_dir is an injection point for the tests: pointing it at a
+        # directory with no manifest exercises the procedural fallback.
+        self.sprites = SpriteSheet(assets_dir)
         # Sized against the tile so the HUD stays legible if TILE changes.
         self.font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15)
         self.font_small = pygame.font.SysFont("menlo,dejavusansmono,monospace", 13)
@@ -67,6 +80,12 @@ class WardRenderer:
         self.line = self.font.get_linesize()
         self.line_small = self.font_small.get_linesize()
         self.frame = 0
+
+        # Which way each character is facing. Presentation state only: it is
+        # derived from movement the viewer can already see, is stored here
+        # rather than on the patient, and never feeds back into the engine.
+        self._facing: dict = {}
+        self._last_seen: dict = {}
 
     # ------------------------------------------------------------------
     def draw(self) -> None:
@@ -98,23 +117,92 @@ class WardRenderer:
             for x in range(ward_map.width):
                 tile = ward_map.tile(x, y)
                 pos = (x * TILE, y * TILE)
-                if tile == WALL:
-                    self.surface.blit(self.sprites.wall, pos)
-                elif tile == STATION:
-                    self.surface.blit(self.sprites.station, pos)
-                elif tile == DRUG_ROOM:
-                    self.surface.blit(self.sprites.drug_room, pos)
-                elif tile == ENTRANCE:
-                    self.surface.blit(self.sprites.entrance, pos)
-                elif tile == BED:
+                if tile == BED:
                     self._draw_bed(x, y)
                 else:
-                    self.surface.blit(self.sprites.floor[(x + y) % 2], pos)
+                    self.surface.blit(self.sprites.tile(self._tile_name(tile, x, y)), pos)
 
         self._draw_queue()
         self._draw_walking_patients()
         self._draw_background_staff()
         self._draw_agent()
+
+    def _tile_name(self, tile: int, x: int, y: int) -> str:
+        """Which artwork tile stands at (x, y).
+
+        The map only records six tile codes, so walls and the nurse station are
+        resolved from their neighbours - otherwise every wall would be the same
+        slab and the ward would not read as a room.
+        """
+        if tile == WALL:
+            return self._wall_name(x, y)
+        if tile == STATION:
+            return self._station_name(x, y)
+        if tile == DRUG_ROOM:
+            return "drug_room_door_closed"
+        if tile == ENTRANCE:
+            return "ward_entrance_double_open"
+        return self._floor_name(x, y)
+
+    def _wall_name(self, x: int, y: int) -> str:
+        ward_map = self.engine.ward_map
+
+        def interior(tx: int, ty: int) -> bool:
+            return ward_map.in_bounds(tx, ty) and ward_map.tile(tx, ty) != WALL
+
+        if interior(x, y + 1):
+            # Wall with the ward below it: we see its front face. Break the run
+            # up with windows so the top of the ward is not a blank band.
+            return "wall_window_panel" if x % 6 == 3 else "wall_horizontal_front"
+        if interior(x, y - 1):
+            return "wall_horizontal_top_edge"
+        if interior(x + 1, y):
+            return "wall_vertical_left"
+        if interior(x - 1, y):
+            return "wall_vertical_right"
+        if interior(x + 1, y + 1):
+            return "wall_corner_outer_top_left"
+        if interior(x - 1, y + 1):
+            return "wall_corner_outer_top_right"
+        return "wall_corner_inner"
+
+    def _station_name(self, x: int, y: int) -> str:
+        """The station is a block of tiles; lay a desk run across it."""
+        tiles = self.engine.ward_map.station_tiles
+        left = min(tx for tx, _ in tiles)
+        right = max(tx for tx, _ in tiles)
+        back = min(ty for _, ty in tiles)
+
+        if x == left:
+            return "desk_left_end"
+        if x == right:
+            return "desk_right_end"
+        if y == back:
+            if x == left + 2:
+                # The board itself reddens when something is alarming - the same
+                # cue already pulsing over the bed, not new information.
+                return "desk_monitor_alarm" if self._alarm_showing() else "desk_monitor_on"
+            return "desk_middle_run"
+        return "desk_keyboard_notes" if x == left + 1 else "desk_middle_run"
+
+    def _floor_name(self, x: int, y: int) -> str:
+        ward_map = self.engine.ward_map
+        beside_a_bed = any(
+            ward_map.tile(x + dx, y + dy) == BED
+            for dx in (-1, 0, 1)
+            for dy in (-1, 0, 1)
+        )
+        if not beside_a_bed:
+            return "corridor_floor"
+        # Chequerboard inside the bays, so the bed areas read as distinct
+        # spaces rather than one continuous floor.
+        return "ward_floor_light" if (x + y) % 2 == 0 else "ward_floor_mid"
+
+    def _alarm_showing(self) -> bool:
+        engine = self.engine
+        return engine.cfg.telemetry_enabled and any(
+            alarm.resolved_step is None for alarm in engine.active_alarms.values()
+        )
 
     def _draw_bed(self, x: int, y: int) -> None:
         engine = self.engine
@@ -122,43 +210,93 @@ class WardRenderer:
         patient = engine.flow.patient_at_bed(bed)
         pos = (x * TILE, y * TILE)
 
-        if patient is None or patient.location is not Location.BED:
-            self.surface.blit(self.sprites.bed, pos)
+        if patient is None:
+            self.surface.blit(self.sprites.tile("hospital_bed_made"), pos)
+        elif patient.location is not Location.BED:
+            # The occupant is off the ward or walking; the bed is left unmade
+            # behind them, which is also the cue that it is not free.
+            self.surface.blit(self.sprites.tile("hospital_bed_disturbed"), pos)
         else:
             # Skin and blanket are both keyed off the patient id, so a given
             # patient keeps the same appearance for the whole shift.
-            skins = self.sprites.patients
-            blankets = skins[patient.patient_id % len(skins)]
-            sprite = blankets[patient.patient_id % len(blankets)]
-            self.surface.blit(sprite, pos)
+            self.surface.blit(
+                self.sprites.patient_in_bed(patient.patient_id, patient.patient_id), pos
+            )
 
         # Bed number, small and dim.
         label = self.font_small.render(str(bed), True, (120, 126, 140))
         self.surface.blit(label, (x * TILE + u(2), y * TILE + TILE - u(12)))
 
+        # The bed a patient-directed action would apply to.
+        if engine.ward_map.adjacent_bed(engine.agent_x, engine.agent_y) == bed:
+            self._blit_overlay("selected_adjacent_bed", pos)
+
         if patient is None:
             return
 
-        # Enrolment pip.
+        # Enrolment pip: is this patient on telemetry, and is it reporting?
         if patient.enrolment is EnrolmentStatus.ENROLLED:
-            colour = sprites.SIGNAL_LOST if patient.signal_lost else sprites.ENROLLED_MARK
-            pygame.draw.circle(self.surface, colour, (x * TILE + TILE - u(5), y * TILE + u(5)), u(3))
+            lost = patient.signal_lost
+            if not self._blit_overlay(
+                "sensor_signal_lost" if lost else "sensor_working", pos
+            ):
+                colour = sprites.SIGNAL_LOST if lost else sprites.ENROLLED_MARK
+                pygame.draw.circle(
+                    self.surface, colour, (x * TILE + TILE - u(5), y * TILE + u(5)), u(3)
+                )
             if patient.steps_since_valid_cgm > self.engine.cfg.alarms.signal_loss_grace_steps:
                 mark = self.font_small.render("?", True, sprites.SIGNAL_LOST)
                 self.surface.blit(mark, (x * TILE + TILE - u(10), y * TILE + u(7)))
 
+        # Discharge readiness the agent has actually established. Drawing the
+        # true stage here would show the player a fact the policy has to spend
+        # a step learning, which would quietly break the POMDP boundary.
+        if patient.knowledge.known_discharge_ready:
+            self._blit_overlay("ready_for_discharge", pos)
+
         # Alarm overlay, pulsing so it reads at a glance.
         alarm = engine.active_alarms.get(bed)
         if alarm is not None and alarm.resolved_step is None and engine.cfg.telemetry_enabled:
-            colour = ALARM_COLOURS.get(alarm.kind, sprites.ALARM_URGENT)
-            pulse = 2 if (self.frame // 4) % 2 == 0 else 1
-            pygame.draw.rect(
-                self.surface,
-                colour,
-                pygame.Rect(x * TILE, y * TILE, TILE, TILE),
-                width=pulse + u(1),
-                border_radius=u(3),
-            )
+            # The overlay says which alarm it is; the border pulses on top so it
+            # still catches the eye in peripheral vision on a busy ward.
+            has_art = self._blit_overlay(ALARM_OVERLAYS.get(alarm.kind, ""), pos)
+            if not has_art or (self.frame // 4) % 2 == 0:
+                colour = ALARM_COLOURS.get(alarm.kind, sprites.ALARM_URGENT)
+                pulse = 2 if (self.frame // 4) % 2 == 0 else 1
+                pygame.draw.rect(
+                    self.surface,
+                    colour,
+                    pygame.Rect(x * TILE, y * TILE, TILE, TILE),
+                    width=pulse + u(1),
+                    border_radius=u(3),
+                )
+
+    def _blit_overlay(self, name: str, pos) -> bool:
+        """Draw a status overlay. False when the art is unavailable."""
+        overlay = self.sprites.bed_overlay(name) if name else None
+        if overlay is None:
+            return False
+        self.surface.blit(overlay, pos)
+        return True
+
+    def _blit_person(self, role: str, pos, direction: str, phase: int,
+                     skin: int = 0) -> None:
+        """Draw a character standing on the tile at `pos`.
+
+        The artwork is a half-tile taller than a tile so heads overlap what is
+        behind them; the offset puts the feet back on the floor.
+        """
+        sprite = self.sprites.person(role, direction, phase, skin)
+        self.surface.blit(sprite, (pos[0], pos[1] + self.sprites.character_y_offset))
+
+    def _face(self, key, dx: int, dy: int, default: str = "down") -> str:
+        """Facing derived from movement, remembered while standing still."""
+        if dx or dy:
+            if abs(dx) >= abs(dy):
+                self._facing[key] = "right" if dx > 0 else "left"
+            else:
+                self._facing[key] = "down" if dy > 0 else "up"
+        return self._facing.get(key, default)
 
     def _draw_queue(self) -> None:
         """Patients waiting for a bed, queued outside the entrance."""
@@ -167,8 +305,8 @@ class WardRenderer:
         for i, _patient in enumerate(engine.flow.queue[:8]):
             px = ex * TILE - (i % 4) * (TILE - u(4)) - u(6)
             py = ey * TILE + (i // 4) * u(10)
-            sprite = self.sprites.walking_patient[(self.frame // 6 + i) % 2]
-            self.surface.blit(sprite, (px, py))
+            # Waiting to be let in, so facing the ward doors.
+            self._blit_person("patient", (px, py), "up", (self.frame // 6) + i, i)
 
     def _draw_walking_patients(self) -> None:
         engine = self.engine
@@ -180,12 +318,17 @@ class WardRenderer:
             ex, ey = engine.ward_map.entrance_tile
             total = max(1, patient.walk_total_steps)
             progress = 1.0 - (patient.walk_steps_left / total)
-            if patient.walk_purpose == "discharge":
+            leaving = patient.walk_purpose == "discharge"
+            if leaving:
                 progress = 1.0 - progress
             px = int((ex + (bx - ex) * progress) * TILE)
             py = int((ey + (by - ey) * progress) * TILE)
-            sprite = self.sprites.walking_patient[(self.frame // 6) % 2]
-            self.surface.blit(sprite, (px, py))
+            # Heading to the bed on admission, back to the doors on discharge.
+            dx, dy = (ex - bx, ey - by) if leaving else (bx - ex, by - ey)
+            direction = self._face(("patient", patient.patient_id), dx, dy)
+            self._blit_person(
+                "patient", (px, py), direction, self.frame // 6, patient.patient_id
+            )
 
     def _draw_background_staff(self) -> None:
         """Colleagues drifting around the ward: available staff are visible."""
@@ -204,23 +347,40 @@ class WardRenderer:
         for role, (ax, ay) in anchors.items():
             if role not in visible_roles:
                 continue
-            wobble = ((self.frame // 12) + hash(role)) % 3 - 1
-            x = (ax + wobble) * TILE
-            y = ay * TILE
-            if not engine.ward_map.walkable(ax + wobble, ay):
-                x = ax * TILE
-            sprite = self.sprites.people[role][(self.frame // 6) % 2]
-            self.surface.blit(sprite, (x, y))
+            # Deterministic drift: `hash` is salted per process for str, which
+            # would make the render non-reproducible between runs.
+            wobble = ((self.frame // 12) + sum(map(ord, role))) % 3 - 1
+            tile_x = ax + wobble
+            if not engine.ward_map.walkable(tile_x, ay):
+                tile_x = ax
+            previous = self._last_seen.get(("staff", role), tile_x)
+            self._last_seen[("staff", role)] = tile_x
+            direction = self._face(("staff", role), tile_x - previous, 0)
+            self._blit_person(
+                role, (tile_x * TILE, ay * TILE), direction, self.frame // 6,
+                sum(map(ord, role)),
+            )
 
     def _draw_agent(self) -> None:
         engine = self.engine
-        sprite = self.sprites.people["agent"][(self.frame // 5) % 2]
         x, y = engine.agent_x * TILE, engine.agent_y * TILE
-        # A soft ring so the player never loses their character.
-        pygame.draw.circle(
-            self.surface, (255, 226, 120), (x + TILE // 2, y + TILE - 3), 7, width=2
+
+        previous = self._last_seen.get("agent", (engine.agent_x, engine.agent_y))
+        self._last_seen["agent"] = (engine.agent_x, engine.agent_y)
+        direction = self._face(
+            "agent", engine.agent_x - previous[0], engine.agent_y - previous[1]
         )
-        self.surface.blit(sprite, (x, y))
+
+        # A ring under the feet so the player never loses their character.
+        ring = self.sprites.effect("player_highlight_ring")
+        if ring is None:
+            pygame.draw.circle(
+                self.surface, (255, 226, 120), (x + TILE // 2, y + TILE - 3), 7, width=2
+            )
+        else:
+            self.surface.blit(ring, (x, y + TILE - ring.get_height()))
+
+        self._blit_person("agent", (x, y), direction, self.frame // 5)
 
     # ------------------------------------------------------------------
     def _draw_hud(self) -> None:

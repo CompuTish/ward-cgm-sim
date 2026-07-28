@@ -23,7 +23,10 @@ ward_cgm_sim/
     rewards.py       named reward components
     engine.py        one 5-minute tick; orchestrates all of the above
   env.py             Gymnasium wrapper. NATIVE ONLY - see §3
-  render/            procedural sprites + top-down renderer
+  render/
+    assets/          the pixel-art sheets + assets-index.json (the contract)
+    sprites.py       loads the sheets; procedural rectangles as fallback
+    pygame_renderer.py  top-down map + HUD
   agents/            random and rule-based baselines
 scripts/             play, run_baseline, evaluate, train_ppo, build_web
 web/main.py          browser entrypoint (pygbag)
@@ -139,7 +142,39 @@ synthetic data with known answers.
 
 ---
 
-## 6. Calibration status
+## 6. The art, and the one rule that governs it
+
+`render/assets/` holds five indexed PNGs plus `assets-index.json`, which is the
+contract: sprite coordinates, the shared 48-colour palette, and the palette
+indices used for recolouring. Read the manifest, do not hard-code offsets.
+
+- **Skin tones and blanket colours are palette regions, not separate sprites.**
+  Five skins and eight blankets are produced by repainting three and two
+  palette entries respectively. `sprites._recolour` repaints the palette entry
+  when the surface is still 8-bit and matches on the baked colour otherwise,
+  because the browser's SDL_image build does not always hand back an indexed
+  surface. Both routes are load-bearing; do not delete one.
+- **The fallback is deliberate.** A missing `assets/` directory drops to the
+  procedural rectangles so the simulator still runs. A *corrupt* one raises -
+  silently degrading to rectangles is how broken art reaches production.
+- **Scaling must stay integer and nearest-neighbour.** `transform.scale`, never
+  `smoothscale`; 16px art at 2x. Anything else smears the pixel grid.
+- **The map is subject to the POMDP boundary too.** The renderer may draw what
+  the agent has *learned* (`patient.knowledge.*`), never hidden truth. Drawing
+  `discharge_stage` would show a viewer a fact the policy must spend a step
+  acquiring. `tests/test_renderer.py` pins this both statically and
+  behaviourally.
+- **No `hash()` on a string in the render path.** It is salted per process, so
+  it makes two runs of the same seed draw different frames.
+
+The renderer resolves walls and the nurse station from their neighbours,
+because `ward_map` only stores six tile codes. Add a tile name and you must add
+it to the sheet; `test_the_renderer_asks_for_tiles_that_exist` walks the whole
+map and will catch a name that is not there.
+
+---
+
+## 7. Calibration status
 
 **No parameter in this model is derived from primary data.** The population is
 deliberately configured to increase eligible-patient and event counts, because
@@ -154,7 +189,7 @@ most influential.
 
 ---
 
-## 7. Known unfinished work
+## 8. Known unfinished work
 
 - **Runtime vendoring** (`scripts/build_web.py --vendor-runtime`) downloads the
   ~25 MB pygbag runtime to serve it same-origin, which would remove the
@@ -162,14 +197,20 @@ most influential.
   assumes the 0.9.x `/archives/` layout while 0.9.3 emits `/cdn/<version>/`.
   Both must be fixed before enabling it. The shipped mitigation is that the demo
   is served from a separate origin instead.
-- **Art** is procedural placeholder geometry. `docs/ASSET_BRIEF.md` is the
-  commission brief for a real tileset.
+- **Art** is delivered and wired in. A few tiles in the sheet have no map data
+  behind them yet (`bedside_cabinet`, `iv_drip_stand`, `curtain_open/closed`,
+  `visitor_chair`, `hand_wash_basin`, `alcohol_gel_dispenser`,
+  `clinical_waste_bin`, `store_cupboard`, `sluice_dirty_utility_door`,
+  `bay_threshold`, `entrance_mat`, `drug_room_floor`) and two overlays
+  (`point_of_care_test`, `treatment_given`) need a transient event feed the
+  renderer does not have. Placing furniture would need `ward_map` to carry it,
+  otherwise the agent walks through chairs.
 - **No trained policy.** `scripts/train_ppo.py` is a worked example, not a
   result.
 
 ---
 
-## 8. Deployment facts
+## 9. Deployment facts
 
 - pygbag must be **≥ 0.9.3**. 0.9.2 fails to boot over HTTP/2 with
   `Cannot read properties of undefined (reading 'statSync')` — it works locally

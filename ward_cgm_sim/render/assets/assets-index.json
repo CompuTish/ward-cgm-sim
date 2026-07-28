@@ -1,0 +1,1633 @@
+{
+  "schema_version": 1,
+  "projection": "orthogonal_top_down",
+  "licence": "CC0-1.0",
+  "tile_size": [
+    16,
+    16
+  ],
+  "character_sprite_size": [
+    16,
+    24
+  ],
+  "display_scale": 2,
+  "palette": {
+    "shared_colour_count_including_transparent": 48,
+    "transparent_index": 0,
+    "entries": [
+      {
+        "index": 0,
+        "name": "transparent",
+        "hex": "#000000",
+        "alpha": 0
+      },
+      {
+        "index": 1,
+        "name": "floor_light",
+        "hex": "#E8E2D4",
+        "alpha": 255
+      },
+      {
+        "index": 2,
+        "name": "floor_mid",
+        "hex": "#DED7C8",
+        "alpha": 255
+      },
+      {
+        "index": 3,
+        "name": "floor_scuff",
+        "hex": "#CFC7B7",
+        "alpha": 255
+      },
+      {
+        "index": 4,
+        "name": "corridor_cool",
+        "hex": "#D6DCE2",
+        "alpha": 255
+      },
+      {
+        "index": 5,
+        "name": "threshold",
+        "hex": "#C5BCA9",
+        "alpha": 255
+      },
+      {
+        "index": 6,
+        "name": "wall_dark",
+        "hex": "#566070",
+        "alpha": 255
+      },
+      {
+        "index": 7,
+        "name": "wall_light",
+        "hex": "#788496",
+        "alpha": 255
+      },
+      {
+        "index": 8,
+        "name": "wall_top",
+        "hex": "#AAB3C0",
+        "alpha": 255
+      },
+      {
+        "index": 9,
+        "name": "outline",
+        "hex": "#3F4956",
+        "alpha": 255
+      },
+      {
+        "index": 10,
+        "name": "bed_frame",
+        "hex": "#B0B6C4",
+        "alpha": 255
+      },
+      {
+        "index": 11,
+        "name": "bed_linen",
+        "hex": "#F4F6FA",
+        "alpha": 255
+      },
+      {
+        "index": 12,
+        "name": "pillow",
+        "hex": "#D6DEEC",
+        "alpha": 255
+      },
+      {
+        "index": 13,
+        "name": "desk_wood",
+        "hex": "#806A4E",
+        "alpha": 255
+      },
+      {
+        "index": 14,
+        "name": "desk_top",
+        "hex": "#9E8464",
+        "alpha": 255
+      },
+      {
+        "index": 15,
+        "name": "screen_dark",
+        "hex": "#28333D",
+        "alpha": 255
+      },
+      {
+        "index": 16,
+        "name": "screen_glow",
+        "hex": "#4AA8C4",
+        "alpha": 255
+      },
+      {
+        "index": 17,
+        "name": "alarm_red",
+        "hex": "#D8443A",
+        "alpha": 255
+      },
+      {
+        "index": 18,
+        "name": "alarm_amber",
+        "hex": "#E89E3E",
+        "alpha": 255
+      },
+      {
+        "index": 19,
+        "name": "alarm_yellow",
+        "hex": "#E7C84F",
+        "alpha": 255
+      },
+      {
+        "index": 20,
+        "name": "ok_green",
+        "hex": "#48B080",
+        "alpha": 255
+      },
+      {
+        "index": 21,
+        "name": "inactive_grey",
+        "hex": "#8C8C96",
+        "alpha": 255
+      },
+      {
+        "index": 22,
+        "name": "navy",
+        "hex": "#2E5B86",
+        "alpha": 255
+      },
+      {
+        "index": 23,
+        "name": "mid_blue",
+        "hex": "#468CC4",
+        "alpha": 255
+      },
+      {
+        "index": 24,
+        "name": "pale_teal",
+        "hex": "#78B0C8",
+        "alpha": 255
+      },
+      {
+        "index": 25,
+        "name": "surgeon_teal",
+        "hex": "#569684",
+        "alpha": 255
+      },
+      {
+        "index": 26,
+        "name": "purple",
+        "hex": "#966EB2",
+        "alpha": 255
+      },
+      {
+        "index": 27,
+        "name": "patient_gown",
+        "hex": "#CED6E2",
+        "alpha": 255
+      },
+      {
+        "index": 28,
+        "name": "skin_main",
+        "hex": "#F0CDB2",
+        "alpha": 255
+      },
+      {
+        "index": 29,
+        "name": "hair_dark",
+        "hex": "#3A302C",
+        "alpha": 255
+      },
+      {
+        "index": 30,
+        "name": "hair_brown",
+        "hex": "#5C4A3A",
+        "alpha": 255
+      },
+      {
+        "index": 31,
+        "name": "hair_gold",
+        "hex": "#B08A56",
+        "alpha": 255
+      },
+      {
+        "index": 32,
+        "name": "trouser",
+        "hex": "#343A48",
+        "alpha": 255
+      },
+      {
+        "index": 33,
+        "name": "white",
+        "hex": "#FAFAFC",
+        "alpha": 255
+      },
+      {
+        "index": 34,
+        "name": "mask",
+        "hex": "#E8EEF0",
+        "alpha": 255
+      },
+      {
+        "index": 35,
+        "name": "deep_neutral",
+        "hex": "#242A32",
+        "alpha": 255
+      },
+      {
+        "index": 36,
+        "name": "blanket_main",
+        "hex": "#7A98BA",
+        "alpha": 255
+      },
+      {
+        "index": 37,
+        "name": "blanket_shadow",
+        "hex": "#657F9E",
+        "alpha": 255
+      },
+      {
+        "index": 38,
+        "name": "soft_pink",
+        "hex": "#C49AA8",
+        "alpha": 255
+      },
+      {
+        "index": 39,
+        "name": "sand",
+        "hex": "#BCAA86",
+        "alpha": 255
+      },
+      {
+        "index": 40,
+        "name": "pale_mint",
+        "hex": "#92B6AC",
+        "alpha": 255
+      },
+      {
+        "index": 41,
+        "name": "lilac",
+        "hex": "#9E8EBA",
+        "alpha": 255
+      },
+      {
+        "index": 42,
+        "name": "sage",
+        "hex": "#8CA68C",
+        "alpha": 255
+      },
+      {
+        "index": 43,
+        "name": "blanket_teal",
+        "hex": "#6EA4A8",
+        "alpha": 255
+      },
+      {
+        "index": 44,
+        "name": "door",
+        "hex": "#6D7B87",
+        "alpha": 255
+      },
+      {
+        "index": 45,
+        "name": "shadow",
+        "hex": "#A9A49A",
+        "alpha": 255
+      },
+      {
+        "index": 46,
+        "name": "skin_detail",
+        "hex": "#E0B698",
+        "alpha": 255
+      },
+      {
+        "index": 47,
+        "name": "skin_shadow",
+        "hex": "#D8AD8F",
+        "alpha": 255
+      }
+    ],
+    "skin_indices": {
+      "main": 28,
+      "detail": 46,
+      "shadow": 47,
+      "variants": [
+        {
+          "name": "light",
+          "main": "#F0CDB2",
+          "detail": "#E0B698",
+          "shadow": "#D8AD8F"
+        },
+        {
+          "name": "light_medium",
+          "main": "#DEB08C",
+          "detail": "#CE9C78",
+          "shadow": "#C4906B"
+        },
+        {
+          "name": "medium",
+          "main": "#BE8C68",
+          "detail": "#AE7B58",
+          "shadow": "#A46E4D"
+        },
+        {
+          "name": "medium_dark",
+          "main": "#966848",
+          "detail": "#85593D",
+          "shadow": "#7A4F35"
+        },
+        {
+          "name": "dark",
+          "main": "#6C4A34",
+          "detail": "#5E3E2C",
+          "shadow": "#503525"
+        }
+      ]
+    },
+    "blanket_indices": {
+      "main": 36,
+      "shadow": 37,
+      "variants": [
+        {
+          "name": "dusty_blue",
+          "main": "#7A98BA",
+          "shadow": "#657F9E"
+        },
+        {
+          "name": "sage",
+          "main": "#8CA68C",
+          "shadow": "#718A71"
+        },
+        {
+          "name": "lilac",
+          "main": "#9E8EBA",
+          "shadow": "#8172A0"
+        },
+        {
+          "name": "teal",
+          "main": "#6EA4A8",
+          "shadow": "#56868A"
+        },
+        {
+          "name": "warm_grey",
+          "main": "#A69E94",
+          "shadow": "#888178"
+        },
+        {
+          "name": "soft_pink",
+          "main": "#C49AA8",
+          "shadow": "#A57D8A"
+        },
+        {
+          "name": "sand",
+          "main": "#BCAA86",
+          "shadow": "#9C8B6A"
+        },
+        {
+          "name": "pale_mint",
+          "main": "#92B6AC",
+          "shadow": "#75978E"
+        }
+      ],
+      "also_used_for": "patient_walking gown trim"
+    }
+  },
+  "sheets": {
+    "tiles.png": {
+      "size": [
+        96,
+        96
+      ],
+      "layout": {
+        "columns": 6,
+        "rows": 6,
+        "sprite_size": [
+          16,
+          16
+        ]
+      },
+      "items": [
+        {
+          "index": 1,
+          "name": "ward_floor_light",
+          "x": 0,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 2,
+          "name": "ward_floor_mid",
+          "x": 16,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 3,
+          "name": "ward_floor_scuff",
+          "x": 32,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 4,
+          "name": "corridor_floor",
+          "x": 48,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 5,
+          "name": "bay_threshold",
+          "x": 64,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 6,
+          "name": "entrance_mat",
+          "x": 80,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 7,
+          "name": "wall_horizontal_front",
+          "x": 0,
+          "y": 16,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 8,
+          "name": "wall_horizontal_top_edge",
+          "x": 16,
+          "y": 16,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 9,
+          "name": "wall_vertical_left",
+          "x": 32,
+          "y": 16,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 10,
+          "name": "wall_vertical_right",
+          "x": 48,
+          "y": 16,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 11,
+          "name": "wall_corner_outer_top_left",
+          "x": 64,
+          "y": 16,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 12,
+          "name": "wall_corner_outer_top_right",
+          "x": 80,
+          "y": 16,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 13,
+          "name": "wall_corner_inner",
+          "x": 0,
+          "y": 32,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 14,
+          "name": "wall_window_panel",
+          "x": 16,
+          "y": 32,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 15,
+          "name": "hospital_bed_made",
+          "x": 32,
+          "y": 32,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 16,
+          "name": "hospital_bed_disturbed",
+          "x": 48,
+          "y": 32,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 17,
+          "name": "bedside_cabinet",
+          "x": 64,
+          "y": 32,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 18,
+          "name": "iv_drip_stand",
+          "x": 80,
+          "y": 32,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 19,
+          "name": "curtain_open",
+          "x": 0,
+          "y": 48,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 20,
+          "name": "curtain_closed",
+          "x": 16,
+          "y": 48,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 21,
+          "name": "visitor_chair",
+          "x": 32,
+          "y": 48,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 22,
+          "name": "hand_wash_basin",
+          "x": 48,
+          "y": 48,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 23,
+          "name": "alcohol_gel_dispenser",
+          "x": 64,
+          "y": 48,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 24,
+          "name": "clinical_waste_bin",
+          "x": 80,
+          "y": 48,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 25,
+          "name": "desk_left_end",
+          "x": 0,
+          "y": 64,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 26,
+          "name": "desk_middle_run",
+          "x": 16,
+          "y": 64,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 27,
+          "name": "desk_right_end",
+          "x": 32,
+          "y": 64,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 28,
+          "name": "desk_monitor_on",
+          "x": 48,
+          "y": 64,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 29,
+          "name": "desk_monitor_alarm",
+          "x": 64,
+          "y": 64,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 30,
+          "name": "desk_keyboard_notes",
+          "x": 80,
+          "y": 64,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 31,
+          "name": "drug_room_door_closed",
+          "x": 0,
+          "y": 80,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 32,
+          "name": "drug_room_floor",
+          "x": 16,
+          "y": 80,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 33,
+          "name": "ward_entrance_double_closed",
+          "x": 32,
+          "y": 80,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 34,
+          "name": "ward_entrance_double_open",
+          "x": 48,
+          "y": 80,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 35,
+          "name": "store_cupboard",
+          "x": 64,
+          "y": 80,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 36,
+          "name": "sluice_dirty_utility_door",
+          "x": 80,
+          "y": 80,
+          "width": 16,
+          "height": 16
+        }
+      ]
+    },
+    "characters.png": {
+      "size": [
+        48,
+        672
+      ],
+      "layout": {
+        "columns": 3,
+        "rows": 28,
+        "sprite_size": [
+          16,
+          24
+        ],
+        "row_order": "character-major, then down/left/right/up",
+        "column_order": [
+          "left_step",
+          "idle",
+          "right_step"
+        ]
+      },
+      "items": [
+        {
+          "character": "ward_nurse_player",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 0,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 0,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 0,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 24,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 24,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 24,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 48,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 48,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 48,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 72,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 72,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "ward_nurse_player",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 72,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 96,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 96,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 96,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 120,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 120,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 120,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 144,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 144,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 144,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 168,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 168,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "healthcare_assistant",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 168,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 192,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 192,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 192,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 216,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 216,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 216,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 240,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 240,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 240,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 264,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 264,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "staff_nurse",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 264,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 288,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 288,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 288,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 312,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 312,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 312,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 336,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 336,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 336,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 360,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 360,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "doctor",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 360,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 384,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 384,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 384,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 408,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 408,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 408,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 432,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 432,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 432,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 456,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 456,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "surgeon",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 456,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 480,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 480,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 480,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 504,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 504,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 504,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 528,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 528,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 528,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 552,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 552,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "diabetes_specialist_nurse",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 552,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "down",
+          "frame": "left_step",
+          "x": 0,
+          "y": 576,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "down",
+          "frame": "idle",
+          "x": 16,
+          "y": 576,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "down",
+          "frame": "right_step",
+          "x": 32,
+          "y": 576,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "left",
+          "frame": "left_step",
+          "x": 0,
+          "y": 600,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "left",
+          "frame": "idle",
+          "x": 16,
+          "y": 600,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "left",
+          "frame": "right_step",
+          "x": 32,
+          "y": 600,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "right",
+          "frame": "left_step",
+          "x": 0,
+          "y": 624,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "right",
+          "frame": "idle",
+          "x": 16,
+          "y": 624,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "right",
+          "frame": "right_step",
+          "x": 32,
+          "y": 624,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "up",
+          "frame": "left_step",
+          "x": 0,
+          "y": 648,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "up",
+          "frame": "idle",
+          "x": 16,
+          "y": 648,
+          "width": 16,
+          "height": 24
+        },
+        {
+          "character": "patient_walking",
+          "direction": "up",
+          "frame": "right_step",
+          "x": 32,
+          "y": 648,
+          "width": 16,
+          "height": 24
+        }
+      ]
+    },
+    "patients_in_bed.png": {
+      "size": [
+        16,
+        16
+      ],
+      "layout": {
+        "columns": 1,
+        "rows": 1,
+        "sprite_size": [
+          16,
+          16
+        ]
+      },
+      "items": [
+        {
+          "index": 1,
+          "name": "patient_in_bed_overlay",
+          "x": 0,
+          "y": 0,
+          "width": 16,
+          "height": 16,
+          "aligns_to": "tiles.png index 15"
+        }
+      ]
+    },
+    "overlays_bed.png": {
+      "size": [
+        176,
+        16
+      ],
+      "layout": {
+        "columns": 11,
+        "rows": 1,
+        "sprite_size": [
+          16,
+          16
+        ]
+      },
+      "items": [
+        {
+          "index": 1,
+          "name": "sensor_working",
+          "x": 0,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 2,
+          "name": "sensor_signal_lost",
+          "x": 16,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 3,
+          "name": "alarm_hypoglycaemia",
+          "x": 32,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 4,
+          "name": "alarm_severe_hypoglycaemia",
+          "x": 48,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 5,
+          "name": "alarm_hyperglycaemia",
+          "x": 64,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 6,
+          "name": "alarm_rapid_fall",
+          "x": 80,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 7,
+          "name": "alarm_rapid_rise",
+          "x": 96,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 8,
+          "name": "point_of_care_test",
+          "x": 112,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 9,
+          "name": "treatment_given",
+          "x": 128,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 10,
+          "name": "ready_for_discharge",
+          "x": 144,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "index": 11,
+          "name": "selected_adjacent_bed",
+          "x": 160,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        }
+      ]
+    },
+    "overlays_effect.png": {
+      "size": [
+        16,
+        24
+      ],
+      "layout": "mixed-size, packed top-to-bottom without padding",
+      "items": [
+        {
+          "index": 1,
+          "name": "player_highlight_ring",
+          "x": 0,
+          "y": 0,
+          "width": 16,
+          "height": 8,
+          "anchor": "feet_bottom_centre"
+        },
+        {
+          "index": 2,
+          "name": "staff_busy_indicator",
+          "optional": true,
+          "x": 0,
+          "y": 8,
+          "width": 16,
+          "height": 16,
+          "anchor": "character"
+        }
+      ]
+    }
+  }
+}

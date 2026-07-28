@@ -1,12 +1,21 @@
-"""Original pixel-art sprites, drawn in code at import time.
+"""Ward artwork: the commissioned pixel-art sheets, with a procedural fallback.
 
-Everything here is generated procedurally from rectangles - there are no image
-files and no third-party assets, so nothing in this repository infringes any
-game's artwork. The look is the familiar top-down 16-bit ward: chunky tiles,
-flat colours, a two-frame walk bob.
+Two sources, one API. `render/assets/` holds original CC0 pixel art - an
+orthogonal top-down tileset, a 7-character sheet and a set of clinical status
+overlays - described by `assets-index.json`. If that directory is absent the
+same API is served by the procedural rectangles further down, so the simulator
+still runs without the art. Nothing here is traced or recoloured from any
+commercial game.
+
+Skin tones and blanket colours are *indexed palette regions*, swapped at load
+time rather than shipped as pre-rendered combinations: five skin tones and
+eight blankets cost five and forty small surfaces instead of forty sheets.
 
 Stdlib + pygame only (ships to the browser build).
 """
+
+import json
+from pathlib import Path
 
 import pygame
 
@@ -14,6 +23,27 @@ import pygame
 # is rendered at a high enough native resolution that the browser's upscale
 # does not turn everything to mush.
 TILE = 32
+
+# The art is authored at 16px and displayed at 2x (integer, nearest-neighbour -
+# any other factor would smear the pixel grid).
+SOURCE_TILE = 16
+SCALE = TILE // SOURCE_TILE
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
+# Renderer role name -> character name in the sheet.
+ROLE_CHARACTERS = {
+    "agent": "ward_nurse_player",
+    "hca": "healthcare_assistant",
+    "nurse": "staff_nurse",
+    "doctor": "doctor",
+    "surgeon": "surgeon",
+    "diabetes": "diabetes_specialist_nurse",
+    "patient": "patient_walking",
+}
+DIRECTIONS = ("down", "left", "right", "up")
+# The classic four-beat walk: contact, pass, contact, pass.
+WALK_CYCLE = ("left_step", "idle", "right_step", "idle")
 
 # --- palette -----------------------------------------------------------
 FLOOR_A = (232, 226, 212)
@@ -223,27 +253,203 @@ def make_patient_in_bed(skin_index: int = 0, blanket_index: int = 0) -> pygame.S
     return surf
 
 
-class SpriteSheet:
-    """Lazily-built sprite cache. Requires an initialised pygame display."""
+def _recolour(source: pygame.Surface, swaps) -> pygame.Surface:
+    """Return a copy of `source` with the swapped palette regions applied.
 
-    def __init__(self):
-        self.floor = [make_floor(0), make_floor(1)]
-        self.wall = make_wall()
-        self.bed = make_bed()
-        self.station = make_station()
-        self.drug_room = make_drug_room()
-        self.entrance = make_entrance()
-        # One sprite per (skin tone, blanket colour) pair so a patient keeps a
-        # stable identity for the whole shift.
-        self.patients = [
-            [make_patient_in_bed(skin, blanket) for blanket in range(len(BLANKET_COLOURS))]
-            for skin in range(len(SKIN_TONES))
+    `swaps` is a sequence of (palette_index, baked_hex, replacement_hex).
+
+    Two routes, because the browser's SDL_image build does not necessarily
+    hand back an indexed surface the way the desktop one does. When the surface
+    is still 8-bit we repaint the palette entry, which touches exactly the
+    intended region. Otherwise we match on the baked colour - safe only because
+    every opaque entry in the 48-colour palette is unique, which
+    `tests/test_render_assets.py` pins down.
+    """
+    out = source.copy()
+    if out.get_bitsize() == 8:
+        for index, _baked, replacement in swaps:
+            out.set_palette_at(index, pygame.Color(replacement))
+        return out.convert_alpha()
+
+    out = out.convert_alpha()
+    if swaps:
+        pixels = pygame.PixelArray(out)
+        for _index, baked, replacement in swaps:
+            pixels.replace(pygame.Color(baked), pygame.Color(replacement))
+        pixels.close()
+    return out
+
+
+class AssetPack:
+    """The commissioned sheets, sliced and scaled to TILE.
+
+    Raises if the sheets are present but unreadable. That is deliberate: a
+    missing `assets/` directory is the supported fallback path, but a corrupt
+    one is a bug that should surface in the build, not degrade silently into
+    rectangles that nobody notices until it is deployed.
+    """
+
+    def __init__(self, directory: Path):
+        self.directory = directory
+        manifest = json.loads(
+            (directory / "assets-index.json").read_text(encoding="utf-8")
+        )
+        sheets = manifest["sheets"]
+        palette = manifest["palette"]
+        self.skin = palette["skin_indices"]
+        self.blanket = palette["blanket_indices"]
+        self.n_skins = len(self.skin["variants"])
+        self.n_blankets = len(self.blanket["variants"])
+
+        self.tiles = self._named(sheets["tiles.png"], "tiles.png")
+        self.bed_overlays = self._named(sheets["overlays_bed.png"], "overlays_bed.png")
+        self.effects = self._named(sheets["overlays_effect.png"], "overlays_effect.png")
+        self.characters = self._characters(sheets["characters.png"])
+        self.patients = self._patients(sheets["patients_in_bed.png"])
+
+    # -- loading helpers ---------------------------------------------------
+    def _load(self, filename: str) -> pygame.Surface:
+        return pygame.image.load(str(self.directory / filename))
+
+    @staticmethod
+    def _cut(sheet: pygame.Surface, item: dict) -> pygame.Surface:
+        rect = pygame.Rect(item["x"], item["y"], item["width"], item["height"])
+        piece = sheet.subsurface(rect).copy()
+        if piece.get_bitsize() == 8:
+            piece = piece.convert_alpha()
+        # scale(), unlike smoothscale(), is nearest-neighbour - it keeps the
+        # pixel grid hard, which is the whole point of pixel art.
+        return pygame.transform.scale(
+            piece, (item["width"] * SCALE, item["height"] * SCALE)
+        )
+
+    def _named(self, spec: dict, filename: str) -> dict:
+        sheet = self._load(filename).convert_alpha()
+        return {item["name"]: self._cut(sheet, item) for item in spec["items"]}
+
+    # -- palette regions ---------------------------------------------------
+    def _skin_swaps(self, index: int):
+        variants = self.skin["variants"]
+        baked, variant = variants[0], variants[index]
+        if index == 0:
+            return []
+        return [
+            (self.skin[part], baked[part], variant[part])
+            for part in ("main", "detail", "shadow")
         ]
-        self.people = {
+
+    def _blanket_swaps(self, index: int):
+        variants = self.blanket["variants"]
+        baked, variant = variants[0], variants[index]
+        if index == 0:
+            return []
+        return [
+            (self.blanket[part], baked[part], variant[part])
+            for part in ("main", "shadow")
+        ]
+
+    # -- sheets ------------------------------------------------------------
+    def _characters(self, spec: dict) -> dict:
+        raw = self._load("characters.png")
+        out = {}
+        for skin in range(self.n_skins):
+            sheet = _recolour(raw, self._skin_swaps(skin))
+            for item in spec["items"]:
+                key = (item["character"], item["direction"], item["frame"], skin)
+                out[key] = self._cut(sheet, item)
+        return out
+
+    def _patients(self, spec: dict) -> list:
+        raw = self._load("patients_in_bed.png")
+        item = spec["items"][0]
+        bed = self.tiles["hospital_bed_made"]
+        grid = []
+        for skin in range(self.n_skins):
+            row = []
+            for blanket in range(self.n_blankets):
+                swaps = self._skin_swaps(skin) + self._blanket_swaps(blanket)
+                occupant = self._cut(_recolour(raw, swaps), item)
+                composite = bed.copy()
+                composite.blit(occupant, (0, 0))
+                row.append(composite)
+            grid.append(row)
+        return grid
+
+
+class SpriteSheet:
+    """Ward artwork behind one API. Requires an initialised pygame display."""
+
+    def __init__(self, assets_dir=None):
+        directory = ASSETS_DIR if assets_dir is None else Path(assets_dir)
+        self.pack = AssetPack(directory) if (directory / "assets-index.json").is_file() else None
+        self.using_assets = self.pack is not None
+
+        # A character is 16x24 on a 16x16 tile, so it stands a half-tile proud
+        # of the tile it occupies and its feet land on the floor. The
+        # rectangles are tile-sized and need no such offset.
+        self.character_y_offset = -(24 - SOURCE_TILE) * SCALE if self.using_assets else 0
+
+        if self.using_assets:
+            self.n_skins = self.pack.n_skins
+            self.n_blankets = self.pack.n_blankets
+            self.patients = self.pack.patients
+            return
+
+        self.n_skins = len(SKIN_TONES)
+        self.n_blankets = len(BLANKET_COLOURS)
+        self._floor = [make_floor(0), make_floor(1)]
+        self._wall = make_wall()
+        self._bed = make_bed()
+        self._station = make_station()
+        self._drug_room = make_drug_room()
+        self._entrance = make_entrance()
+        self.patients = [
+            [make_patient_in_bed(skin, blanket) for blanket in range(self.n_blankets)]
+            for skin in range(self.n_skins)
+        ]
+        self._people = {
             role: [make_person(colour, i % len(SKIN_TONES), bob, role=role)
                    for i, bob in enumerate((0, 1))]
             for role, colour in STAFF_COLOURS.items()
         }
-        self.walking_patient = [
+        self._people["patient"] = [
             make_person(PATIENT_GOWN, 1, bob, role="patient") for bob in (0, 1)
         ]
+
+    # ------------------------------------------------------------------
+    def tile(self, name: str) -> pygame.Surface:
+        """A map tile by its name in the manifest."""
+        if self.using_assets:
+            return self.pack.tiles[name]
+        # The rectangles have no per-name variants; map each family onto the
+        # one shape that stands for it.
+        if name.startswith("wall"):
+            return self._wall
+        if name.startswith("desk"):
+            return self._station
+        if name.startswith("drug_room"):
+            return self._drug_room
+        if name.startswith("ward_entrance") or name == "entrance_mat":
+            return self._entrance
+        if name.startswith("hospital_bed"):
+            return self._bed
+        return self._floor[1] if name == "ward_floor_mid" else self._floor[0]
+
+    def person(self, role: str, direction: str = "down", phase: int = 0,
+               skin: int = 0) -> pygame.Surface:
+        """One character frame. Direction is ignored by the fallback."""
+        if not self.using_assets:
+            return self._people[role][phase % 2]
+        frame = WALK_CYCLE[phase % len(WALK_CYCLE)]
+        character = ROLE_CHARACTERS[role]
+        return self.pack.characters[(character, direction, frame, skin % self.n_skins)]
+
+    def patient_in_bed(self, skin: int, blanket: int) -> pygame.Surface:
+        return self.patients[skin % self.n_skins][blanket % self.n_blankets]
+
+    def bed_overlay(self, name: str):
+        """A clinical status overlay, or None when running on rectangles."""
+        return self.pack.bed_overlays.get(name) if self.using_assets else None
+
+    def effect(self, name: str):
+        return self.pack.effects.get(name) if self.using_assets else None

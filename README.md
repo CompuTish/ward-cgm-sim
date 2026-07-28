@@ -158,13 +158,21 @@ ward_cgm_sim/
   core/           patient, glucose, alarms, eligibility, staff, bedflow,
                   ward_map, actions, observations, rewards, engine
   env.py          Gymnasium wrapper (native only)
-  render/         procedural pixel sprites + top-down renderer
+  render/         pixel-art sheets (assets/) + top-down renderer
   agents/         random and rule-based baselines
 scripts/          play, run_baseline, evaluate, train_ppo, build_web
-tests/            130 tests; see CLAUDE.md for what each layer must prove
+tests/            191 tests; see CLAUDE.md for what each layer must prove
 docs/POMDP.md     the formal specification
 ```
 
 ## Licence
 
-MIT. Sprites are drawn procedurally in code — there are no third-party assets.
+Code is MIT.
+
+The artwork in `ward_cgm_sim/render/assets/` is original and released under
+[CC0-1.0](ward_cgm_sim/render/assets/LICENSE-CC0.txt). It was drawn for this
+project against `docs/ASSET_BRIEF.md` and is regenerated deterministically by
+`scripts/generate_ward_assets.py`; nothing in it is traced, derived or
+recoloured from any commercial game. If the sheets are removed the renderer
+falls back to the procedural rectangles in `render/sprites.py`, so the
+simulator has no hard dependency on them.

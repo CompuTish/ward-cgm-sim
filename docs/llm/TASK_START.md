@@ -63,5 +63,6 @@ claims over collections that might be empty, are the usual culprits.
 | Add or change an action | `core/actions.py` → `core/engine.py::_resolve_action` → `docs/POMDP.md` §4 |
 | Change the reward | `config.py::RewardConfig` → `core/rewards.py` → `docs/POMDP.md` §6 |
 | Change what the agent can see | `core/observations.py` → tests in `tests/test_observability.py` |
-| Change the art | `docs/ASSET_BRIEF.md`, then `ward_cgm_sim/render/sprites.py` — **never** `web/ward_cgm_sim/`, which is generated |
+| Change the art | `render/assets/assets-index.json` is the contract; load it in `render/sprites.py`, draw it in `render/pygame_renderer.py`. Read CONTEXT_PACK §6 first — **never** edit `web/ward_cgm_sim/`, which is generated |
+| Regenerate the art | `scripts/generate_ward_assets.py` (dev-only, needs Pillow); output must stay byte-identical unless you meant to change it |
 | Rebuild the web demo | `python scripts/build_web.py` (add `--serve` to preview the built output), then deploy per the parent repo's CLAUDE.md |

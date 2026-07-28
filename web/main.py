@@ -20,8 +20,10 @@ from ward_cgm_sim.core.actions import Action
 from ward_cgm_sim.core.engine import WardEngine
 from ward_cgm_sim.render.pygame_renderer import WardRenderer
 
-# Steps per second while the rule-based policy is driving.
-WATCH_SPEED = 6
+# Steps per second while the rule-based policy is driving. Deliberately slow:
+# at six steps a second the ward changes faster than a viewer can follow what
+# the nurse is actually doing.
+WATCH_SPEED = 3
 
 KEY_ACTIONS = {
     pygame.K_UP: Action.MOVE_UP,
@@ -115,9 +117,9 @@ class Demo:
 
         # Solid backing panel: these hints sit over the pale ward floor, and
         # without it the text is unreadable.
-        line_height = 15
-        height = line_height * len(hints) + 10
-        width = max(font.size(line)[0] for line in hints) + 20
+        line_height = 19
+        height = line_height * len(hints) + 14
+        width = max(font.size(line)[0] for line in hints) + 28
         panel = pygame.Surface((width, height), pygame.SRCALPHA)
         panel.fill((18, 21, 28, 232))
         pygame.draw.rect(panel, (70, 80, 98), panel.get_rect(), width=1)
@@ -126,7 +128,7 @@ class Demo:
         y = surface.get_height() - height - 3
         for index, line in enumerate(hints):
             colour = (255, 214, 110) if (banner and index == 0) else (198, 206, 220)
-            surface.blit(font.render(line, True, colour), (18, y))
+            surface.blit(font.render(line, True, colour), (22, y))
             y += line_height
 
 

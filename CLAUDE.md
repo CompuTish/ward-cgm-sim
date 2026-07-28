@@ -1,8 +1,12 @@
 # CLAUDE.md — ward-cgm-sim
 
 An academic POMDP simulator of inpatient CGM telemetry on a 32-bed ward, built for an MRes
-project. Gymnasium environment + pygame top-down renderer. Intended to be compiled to
-WebAssembly with pygbag for a browser demo — `web/` is not built yet.
+project. Gymnasium environment + pygame top-down renderer, compiled to WebAssembly with pygbag
+and deployed to `ward-cgm-demo.web.app`.
+
+**New here? Start at [`docs/llm/TASK_START.md`](docs/llm/TASK_START.md)**, which routes you
+through `CONTEXT_PACK.md` (architecture, invariants, traps) and `PREFLIGHT.md` (checks to run
+before changing anything). This file covers the rules; those cover the shape of the thing.
 
 ## Clinical-content rule (never violate)
 
@@ -26,7 +30,7 @@ state that it is configurable and where it lives (`ward_cgm_sim/config.py`).
 ## Import policy (breaks the browser build if violated)
 
 The core must stay importable with the standard library plus `pygame-ce` alone, because the same
-tree will be vendored into the WebAssembly bundle once the web build exists.
+tree is vendored into the WebAssembly bundle.
 
 - `ward_cgm_sim/core/**`, `render/**`, `agents/**`, `config.py` — **stdlib + pygame-ce only**.
   No numpy, no gymnasium, no stable-baselines3.

@@ -92,6 +92,20 @@ def build(serve: bool) -> None:
             print(f"  {item.name}  ({item.stat().st_size / 1024:.0f} KB)")
 
 
+# Injected into the generated page. The canvas is rendered at a fixed native
+# size and then scaled by the browser to fit the viewport; without this the
+# default smooth interpolation turns every sprite and every glyph to mush.
+CRISP_CSS = """
+<style id="ward-sim-crisp">
+  canvas, #canvas, #screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
+  }
+</style>
+"""
+
+
 PYGBAG_VERSION = "0.9"
 CDN_BASE = f"https://pygame-web.github.io/archives/{PYGBAG_VERSION}/"
 REPO_BASE = "https://pygame-web.github.io/archives/repo/"
@@ -174,6 +188,20 @@ def vendor_runtime() -> None:
           f"{total / 1024 / 1024:.1f} MB, no third-party fetches remain")
 
 
+def make_crisp() -> None:
+    """Turn off smoothing on the upscaled canvas."""
+    index = WEB_DIR / "build" / "web" / "index.html"
+    html = index.read_text()
+    if 'id="ward-sim-crisp"' in html:
+        return
+    if "</head>" in html:
+        html = html.replace("</head>", CRISP_CSS + "</head>", 1)
+    else:
+        html = CRISP_CSS + html
+    index.write_text(html)
+    print("canvas set to nearest-neighbour scaling")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serve", action="store_true", help="serve locally on :8000")
@@ -190,6 +218,8 @@ def main() -> None:
     verify()
     if not args.vendor_only:
         build(serve=args.serve)
+        if not args.serve:
+            make_crisp()
         if not args.serve and args.vendor_runtime:
             vendor_runtime()
 

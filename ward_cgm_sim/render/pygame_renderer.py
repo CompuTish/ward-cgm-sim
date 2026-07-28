@@ -15,9 +15,9 @@ from ..core.alarms import AlarmKind
 from ..core.patient import EnrolmentStatus, Location
 from ..core.ward_map import BED, DRUG_ROOM, ENTRANCE, FLOOR, STATION, WALL
 from . import sprites
-from .sprites import TILE, SpriteSheet
+from .sprites import TILE, SpriteSheet, u
 
-HUD_WIDTH = 268
+HUD_WIDTH = 340
 PANEL_BG = (28, 32, 42)
 PANEL_ALT = (38, 44, 56)
 TEXT = (232, 236, 244)
@@ -49,7 +49,7 @@ class WardRenderer:
         map_w = engine.ward_map.width * TILE
         map_h = engine.ward_map.height * TILE
         self.width = map_w + HUD_WIDTH
-        self.height = max(map_h, 520)
+        self.height = max(map_h, 560)
 
         if headless:
             self.surface = pygame.Surface((self.width, self.height))
@@ -58,9 +58,14 @@ class WardRenderer:
             pygame.display.set_caption("Ward CGM telemetry simulator - academic model")
 
         self.sprites = SpriteSheet()
-        self.font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 13)
-        self.font_small = pygame.font.SysFont("menlo,dejavusansmono,monospace", 11)
-        self.font_big = pygame.font.SysFont("menlo,dejavusansmono,monospace", 20, bold=True)
+        # Sized against the tile so the HUD stays legible if TILE changes.
+        self.font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15)
+        self.font_small = pygame.font.SysFont("menlo,dejavusansmono,monospace", 13)
+        self.font_big = pygame.font.SysFont("menlo,dejavusansmono,monospace", 26, bold=True)
+        # Every HUD row is laid out from the measured line height rather than
+        # hard-coded offsets, so a font change cannot silently overlap boxes.
+        self.line = self.font.get_linesize()
+        self.line_small = self.font_small.get_linesize()
         self.frame = 0
 
     # ------------------------------------------------------------------
@@ -124,7 +129,7 @@ class WardRenderer:
 
         # Bed number, small and dim.
         label = self.font_small.render(str(bed), True, (120, 126, 140))
-        self.surface.blit(label, (x * TILE + 2, y * TILE + TILE - 11))
+        self.surface.blit(label, (x * TILE + u(2), y * TILE + TILE - u(12)))
 
         if patient is None:
             return
@@ -132,10 +137,10 @@ class WardRenderer:
         # Enrolment pip.
         if patient.enrolment is EnrolmentStatus.ENROLLED:
             colour = sprites.SIGNAL_LOST if patient.signal_lost else sprites.ENROLLED_MARK
-            pygame.draw.circle(self.surface, colour, (x * TILE + TILE - 5, y * TILE + 5), 3)
+            pygame.draw.circle(self.surface, colour, (x * TILE + TILE - u(5), y * TILE + u(5)), u(3))
             if patient.steps_since_valid_cgm > self.engine.cfg.alarms.signal_loss_grace_steps:
                 mark = self.font_small.render("?", True, sprites.SIGNAL_LOST)
-                self.surface.blit(mark, (x * TILE + TILE - 9, y * TILE + 7))
+                self.surface.blit(mark, (x * TILE + TILE - u(10), y * TILE + u(7)))
 
         # Alarm overlay, pulsing so it reads at a glance.
         alarm = engine.active_alarms.get(bed)
@@ -146,8 +151,8 @@ class WardRenderer:
                 self.surface,
                 colour,
                 pygame.Rect(x * TILE, y * TILE, TILE, TILE),
-                width=pulse + 1,
-                border_radius=3,
+                width=pulse + u(1),
+                border_radius=u(3),
             )
 
     def _draw_queue(self) -> None:
@@ -155,8 +160,8 @@ class WardRenderer:
         engine = self.engine
         ex, ey = engine.ward_map.entrance_tile
         for i, _patient in enumerate(engine.flow.queue[:8]):
-            px = ex * TILE - (i % 4) * (TILE - 4) - 6
-            py = ey * TILE + (i // 4) * 10
+            px = ex * TILE - (i % 4) * (TILE - u(4)) - u(6)
+            py = ey * TILE + (i // 4) * u(10)
             sprite = self.sprites.walking_patient[(self.frame // 6 + i) % 2]
             self.surface.blit(sprite, (px, py))
 
@@ -221,17 +226,24 @@ class WardRenderer:
         pygame.draw.rect(self.surface, PANEL_BG, panel)
         pygame.draw.line(self.surface, (60, 68, 84), (x0, 0), (x0, self.height))
 
-        pad = 14
-        y = 12
+        pad = 16
+        y = 14
 
         minutes = engine.step_index * cfg.minutes_per_step
         clock = f"{7 + minutes // 60:02d}:{minutes % 60:02d}"
-        self.surface.blit(self.font_big.render(clock, True, TEXT), (x0 + pad, y))
+        clock_surface = self.font_big.render(clock, True, TEXT)
+        self.surface.blit(clock_surface, (x0 + pad, y))
         shift_label = self.font_small.render(
             f"step {engine.step_index}/{cfg.steps_per_episode}", True, TEXT_DIM
         )
-        self.surface.blit(shift_label, (x0 + pad + 78, y + 7))
-        y += 34
+        # Right-aligned against the panel edge so it can never collide with the
+        # clock, however wide either grows.
+        self.surface.blit(
+            shift_label,
+            (x0 + HUD_WIDTH - pad - shift_label.get_width(),
+             y + clock_surface.get_height() - shift_label.get_height() - 2),
+        )
+        y += clock_surface.get_height() + 10
 
         # Progress bar for the shift.
         bar = pygame.Rect(x0 + pad, y, HUD_WIDTH - 2 * pad, 5)
@@ -243,7 +255,7 @@ class WardRenderer:
             pygame.Rect(bar.x, bar.y, int(bar.width * frac), bar.height),
             border_radius=3,
         )
-        y += 18
+        y += 20
 
         y = self._draw_stats(x0, y, pad)
         y = self._draw_alarm_board(x0, y, pad)
@@ -258,16 +270,20 @@ class WardRenderer:
             ("Queue", str(flow.queue_length)),
             ("Enrolled", str(sum(1 for p in flow.patients() if p.is_enrolled))),
         ]
-        box_w = (HUD_WIDTH - 2 * pad - 8) // 2
+        gap = 10
+        box_w = (HUD_WIDTH - 2 * pad - gap) // 2
+        box_h = self.line_small + self.line + 12
         for i, (label, value) in enumerate(stats):
-            bx = x0 + pad + (i % 2) * (box_w + 8)
-            by = y + (i // 2) * 42
+            bx = x0 + pad + (i % 2) * (box_w + gap)
+            by = y + (i // 2) * (box_h + gap)
             pygame.draw.rect(
-                self.surface, PANEL_ALT, pygame.Rect(bx, by, box_w, 36), border_radius=5
+                self.surface, PANEL_ALT, pygame.Rect(bx, by, box_w, box_h), border_radius=6
             )
-            self.surface.blit(self.font_small.render(label, True, TEXT_DIM), (bx + 8, by + 5))
-            self.surface.blit(self.font.render(value, True, TEXT), (bx + 8, by + 17))
-        y += 96
+            self.surface.blit(self.font_small.render(label, True, TEXT_DIM), (bx + 10, by + 5))
+            self.surface.blit(
+                self.font.render(value, True, TEXT), (bx + 10, by + 5 + self.line_small)
+            )
+        y += 2 * box_h + gap + 14
 
         staff_words = ("skeleton", "stretched", "comfortable")
         level = engine.staff.coarse_availability()
@@ -275,19 +291,19 @@ class WardRenderer:
             self.font_small.render(f"Staff: {staff_words[level]}", True, TEXT_DIM),
             (x0 + pad, y),
         )
-        y += 20
+        y += self.line_small + 10
         return y
 
     def _draw_alarm_board(self, x0: int, y: int, pad: int) -> int:
         engine = self.engine
         title = "TELEMETRY" if engine.cfg.telemetry_enabled else "TELEMETRY OFF"
         self.surface.blit(self.font_small.render(title, True, ACCENT), (x0 + pad, y))
-        y += 16
+        y += self.line_small + 4
 
         if not engine.cfg.telemetry_enabled:
             note = self.font_small.render("no dashboard: check patients", True, TEXT_DIM)
             self.surface.blit(note, (x0 + pad, y))
-            return y + 24
+            return y + self.line_small + 10
 
         alarms = engine.visible_alarms()
         if not alarms:
@@ -299,32 +315,41 @@ class WardRenderer:
             )
             for line in lines:
                 self.surface.blit(self.font_small.render(line, True, TEXT_DIM), (x0 + pad, y))
-                y += 14
+                y += self.line_small
             return y + 10
 
         alarms.sort(key=lambda a: (not a.is_urgent, -a.age(engine.step_index)))
         for alarm in alarms[:8]:
             colour = ALARM_COLOURS.get(alarm.kind, sprites.ALARM_URGENT)
-            row = pygame.Rect(x0 + pad, y, HUD_WIDTH - 2 * pad, 20)
+            row = pygame.Rect(x0 + pad, y, HUD_WIDTH - 2 * pad, self.line_small + 8)
             pygame.draw.rect(self.surface, PANEL_ALT, row, border_radius=4)
-            pygame.draw.rect(self.surface, colour, pygame.Rect(row.x, row.y, 3, row.height), border_radius=2)
+            pygame.draw.rect(self.surface, colour, pygame.Rect(row.x, row.y, 4, row.height), border_radius=2)
             text = f"bed {alarm.bed:2d} {alarm.kind.value:11s} {alarm.cgm_value:4.1f}"
-            self.surface.blit(self.font_small.render(text, True, TEXT), (row.x + 9, row.y + 4))
+            self.surface.blit(self.font_small.render(text, True, TEXT), (row.x + 11, row.y + 4))
             age = self.font_small.render(f"+{alarm.age(engine.step_index)}", True, TEXT_DIM)
-            self.surface.blit(age, (row.right - 26, row.y + 4))
-            y += 23
+            self.surface.blit(age, (row.right - age.get_width() - 8, row.y + 4))
+            y += row.height + 4
         return y + 8
 
     def _draw_footer(self, x0: int, pad: int) -> None:
         engine = self.engine
-        y = self.height - 62
-        msg = engine.last_action_result
-        if len(msg) > 34:
-            msg = msg[:33] + "…"
-        self.surface.blit(self.font_small.render(msg, True, TEXT_DIM), (x0 + pad, y))
-        y += 18
-        reward = self.font_small.render(f"return {engine.rewards.total:+.1f}", True, TEXT)
-        self.surface.blit(reward, (x0 + pad, y))
-        y += 18
-        disclaimer = self.font_small.render("academic model - not clinical advice", True, (108, 114, 128))
-        self.surface.blit(disclaimer, (x0 + pad, y))
+        available = HUD_WIDTH - 2 * pad
+
+        def fit(text: str) -> str:
+            """Trim to the panel width using measured text, not a guessed
+            character count - the disclaimer was being clipped mid-word."""
+            if self.font_small.size(text)[0] <= available:
+                return text
+            while text and self.font_small.size(text + "…")[0] > available:
+                text = text[:-1]
+            return text + "…"
+
+        lines = [
+            (fit(engine.last_action_result), TEXT_DIM),
+            (fit(f"return {engine.rewards.total:+.1f}"), TEXT),
+            (fit("academic model - not clinical advice"), (108, 114, 128)),
+        ]
+        y = self.height - pad - self.line_small * len(lines)
+        for text, colour in lines:
+            self.surface.blit(self.font_small.render(text, True, colour), (x0 + pad, y))
+            y += self.line_small

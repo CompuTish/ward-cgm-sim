@@ -6,12 +6,12 @@ ward workflow and patient safety.
 
 You are the nurse. Thirty-two beds, a twelve-hour shift, five minutes a step. A
 telemetry dashboard at the nurse station tells you when somebody's glucose is
-heading the wrong way — sometimes. Sensors drift, alarm on nothing, and
+heading the wrong way - sometimes. Sensors drift, alarm on nothing, and
 occasionally just stop reporting without saying so. Meanwhile there are patients
 to enrol, notes to check, consent to seek, discharges to chase and an ED queue
 filling up behind you.
 
-> ### Academic model — not clinical decision support
+> ### Academic model - not clinical decision support
 > This is a research and teaching model built for an MRes project. Every
 > treatment pathway, threshold and timing is a **simplified, configurable,
 > guideline-inspired placeholder**, chosen to make the simulation behave
@@ -30,12 +30,12 @@ filling up behind you.
 - Enrolment and de-enrolment against the study's inclusion/exclusion criteria,
   including mid-shift changes that make somebody ineligible
 - Background nurses, HCAs, doctors, surgeons and the diabetes team, each
-  available only some of the time — and only discoverable by asking
+  available only some of the time - and only discoverable by asking
 - A Pokémon-style top-down ward you actually walk around, because where you are
   standing determines what you can see and do
 
-The formal specification — POMDP tuple, observation and action spaces,
-transition dynamics, reward weights, and every clinical model — is in
+The formal specification - POMDP tuple, observation and action spaces,
+transition dynamics, reward weights, and every clinical model - is in
 **[`docs/POMDP.md`](docs/POMDP.md)**.
 
 ## Quickstart
@@ -93,7 +93,7 @@ python scripts/evaluate.py --episodes 30
 ```
 
 Both arms run on **matched seeds with partitioned random streams**, so they
-simulate the same ward — an intervention on one patient cannot perturb another's
+simulate the same ward - an intervention on one patient cannot perturb another's
 trajectory. The primary outcome is hypoglycaemia **detection delay** within the
 monitored cohort; secondary outcomes cover alarm burden, enrolment quality and
 ward flow.
@@ -109,20 +109,20 @@ marginal intervals overlap is *not* a test and the script says so.
 
 | Contrast (telemetry − routine), monitored cohort | Estimate |
 |---|---|
-| Detection rate | **+0.31 [+0.16, +0.50]** — excludes 0 |
-| Detection delay, given detected (steps) | −4.27 [−16.66, +2.07] — includes 0 |
+| Detection rate | **+0.31 [+0.16, +0.50]** - excludes 0 |
+| Detection delay, given detected (steps) | −4.27 [−16.66, +2.07] - includes 0 |
 
 **Only the first line supports a conclusion.** Detection rate roughly doubles
 (0.66 against 0.34, from 29 episodes per arm). The delay difference looks large
 but its interval spans −16.7 to +2.1 steps, because only ten episodes were ever
-detected in the comparator arm — it is not distinguishable from noise here and
+detected in the comparator arm - it is not distinguishable from noise here and
 must not be quoted as if it were.
 
 Read both together in any case. Delay is **conditional on detection** and
 therefore censored: an episode nobody found contributes no delay at all, so an
 arm that only catches the obvious events looks deceptively fast.
 
-Ward-wide, detection is 0.21 [0.18, 0.24] against 0.19 [0.16, 0.22] — no
+Ward-wide, detection is 0.21 [0.18, 0.24] against 0.19 [0.16, 0.22] - no
 discernible effect. That dilution is the more interesting result: only about
 one patient in seven meets the eligibility criteria, so even a real
 within-cohort improvement barely moves a ward-level average. A study would need
@@ -135,7 +135,7 @@ predictions, and **no parameter here is derived from primary data**. See
 before this informs any real study design.
 
 This is a simulation study of a workflow model. It cannot demonstrate clinical
-benefit — it can show whether a mechanism plausibly produces one, and which
+benefit - it can show whether a mechanism plausibly produces one, and which
 assumptions that conclusion depends on.
 
 ## Web demo
@@ -170,7 +170,7 @@ docs/POMDP.md     the formal specification
 Code is MIT.
 
 The artwork in `ward_cgm_sim/render/assets/` is drawn in full by
-`scripts/generate_ward_assets.py` in this repository — the sheets are program
+`scripts/generate_ward_assets.py` in this repository - the sheets are program
 output, not imported artwork, and re-running the script reproduces them byte for
 byte. It was written from scratch against `docs/ASSET_BRIEF.md`; nothing in it
 is traced, derived or recoloured from any commercial game. The repository

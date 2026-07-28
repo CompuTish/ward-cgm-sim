@@ -64,10 +64,15 @@ class WardRenderer:
     """Draws the engine state. One instance per window."""
 
     def __init__(self, engine, headless: bool = False, scale: int = 1,
-                 assets_dir=None):
+                 assets_dir=None, show_hud: bool = True):
         self.engine = engine
         self.scale = scale
         self.headless = headless
+        # When the page around the demo renders the readout itself, the canvas
+        # drops the HUD entirely and becomes map-only. Two panels showing the
+        # same numbers would be redundant, and giving the whole canvas to the
+        # ward means the map is drawn larger for the same page width.
+        self.show_hud = show_hud
 
         if not pygame.get_init():
             pygame.init()
@@ -76,8 +81,8 @@ class WardRenderer:
 
         map_w = engine.ward_map.width * TILE
         map_h = engine.ward_map.height * TILE
-        self.width = map_w + HUD_WIDTH
-        self.height = max(map_h, 560 * TILE // 32)
+        self.width = map_w + (HUD_WIDTH if show_hud else 0)
+        self.height = map_h if not show_hud else max(map_h, 560 * TILE // 32)
 
         if headless:
             self.surface = pygame.Surface((self.width, self.height))
@@ -123,7 +128,8 @@ class WardRenderer:
         self.frame += 1
         self.surface.fill(PANEL_BG)
         self._draw_map()
-        self._draw_hud()
+        if self.show_hud:
+            self._draw_hud()
 
     def flip(self) -> None:
         if not self.headless:

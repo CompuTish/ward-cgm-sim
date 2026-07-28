@@ -1,4 +1,4 @@
-# CONTEXT_PACK — architecture, invariants and traps
+# CONTEXT_PACK - architecture, invariants and traps
 
 Everything a contributor needs that is not obvious from reading the code, and
 several things that are actively misleading if you only read the code.
@@ -19,7 +19,7 @@ ward_cgm_sim/
     bedflow.py       beds, admissions queue, the discharge pipeline
     ward_map.py      tile grid, bed positions, BFS pathfinding
     actions.py       the 24 discrete actions
-    observations.py  the observable slice — the POMDP boundary lives here
+    observations.py  the observable slice - the POMDP boundary lives here
     rewards.py       named reward components
     engine.py        one 5-minute tick; orchestrates all of the above
   env.py             Gymnasium wrapper. NATIVE ONLY - see §3
@@ -34,7 +34,7 @@ web/main.py          browser entrypoint (pygbag)
 
 **Source of truth:** `ward_cgm_sim/` is the only place to edit. `web/ward_cgm_sim/`
 is a **generated copy** written by `scripts/build_web.py` on every build and is
-gitignored — hand-editing it will be silently overwritten and the change lost.
+gitignored - hand-editing it will be silently overwritten and the change lost.
 Same for `web/build/`.
 
 **One tick, in order:** resolve the agent's action → advance physiology →
@@ -84,7 +84,7 @@ those must import **standard library plus pygame-ce only**.
 
 ---
 
-## 4. Counterfactual integrity — the invariant most easily broken
+## 4. Counterfactual integrity - the invariant most easily broken
 
 The telemetry and routine-monitoring arms are only comparable because they
 simulate the *same ward*. That relies on common random numbers, partitioned by
@@ -103,11 +103,11 @@ scope:
 
 **How it gets broken.** Every one of these has actually happened here:
 
-- A draw gated behind `if patient.is_enrolled` — only true in one arm, so the
+- A draw gated behind `if patient.is_enrolled` - only true in one arm, so the
   stream desynchronises.
 - A draw taken *inside* a conditional branch, so the number of draws depends on
   state the agent influences. Draw unconditionally, apply conditionally.
-- Seeding streams by XOR or multiplication of ids — it **collides**. One
+- Seeding streams by XOR or multiplication of ids - it **collides**. One
   patient's physiology stream became byte-identical to another's sensor stream.
   Use the domain-separated string seeds in `sample_patient`.
 - Putting an action-triggered draw on `rng_care`, letting an agent action shift
@@ -213,7 +213,7 @@ most influential.
 ## 9. Deployment facts
 
 - pygbag must be **≥ 0.9.3**. 0.9.2 fails to boot over HTTP/2 with
-  `Cannot read properties of undefined (reading 'statSync')` — it works locally
+  `Cannot read properties of undefined (reading 'statSync')` - it works locally
   over HTTP/1.0 and fails once deployed, so local testing will not catch it.
 - The demo **cannot run in an iframe sandboxed without `allow-same-origin`**;
   it loses the storage access BrowserFS needs and hangs. Adding that flag makes

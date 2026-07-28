@@ -445,3 +445,30 @@ def test_the_readout_is_addressed_to_one_origin_not_a_wildcard(web_main):
 def test_the_readout_is_not_published_every_single_frame(web_main):
     """30 posts a second for numbers that change a few times a second."""
     assert web_main.PUBLISH_EVERY >= 5
+
+
+def test_the_external_panel_switch_defaults_to_keeping_the_canvas_hud(web_main):
+    """Fail-safe: off the browser, and on any error, the HUD stays.
+
+    The page hides the canvas HUD by asking for it in the URL. If that request
+    can never be read the demo must still show its own readout, or a viewer
+    would be left with a ward and no numbers at all.
+    """
+    assert web_main.external_panel_requested() is False
+    demo = web_main.Demo()
+    assert demo.external_panel is False
+    assert demo.renderer.show_hud is True
+
+
+def test_the_fragment_the_page_appends_is_the_one_the_demo_looks_for(web_main):
+    """Two files have to agree on this string or the switch silently does nothing."""
+    page = (
+        REPO_ROOT.parent / "site_isabelsmith.me" / "public" / "projects"
+        / "ward-sim" / "index.html"
+    )
+    if not page.is_file():
+        pytest.skip("the project page lives in the parent repository")
+    markup = page.read_text(encoding="utf-8")
+    assert "ward-cgm-demo.web.app/#" + web_main.EXTERNAL_PANEL_FRAGMENT in markup, (
+        "the page does not ask for the external panel with the expected fragment"
+    )

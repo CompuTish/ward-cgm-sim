@@ -516,3 +516,46 @@ def test_the_published_key_explains_everything_the_ward_can_draw():
     # Every alarm the engine can raise has to be in the key, by name.
     for kind in AlarmKind:
         assert ALARM_OVERLAYS[kind] in explained_markers, kind
+
+
+def test_map_only_mode_gives_the_whole_canvas_to_the_ward():
+    """When the page renders the readout, the canvas drops its own.
+
+    Two panels showing the same numbers would be redundant, and the ward gets
+    the reclaimed width. The aspect ratio matters: the project page sets the
+    iframe from it, and a mismatch letterboxes the demo.
+    """
+    engine = WardEngine(SimConfig(), seed=6)
+    ward_map = engine.ward_map
+    full = WardRenderer(engine, headless=True)
+    lean = WardRenderer(engine, headless=True, show_hud=False)
+
+    assert full.width == ward_map.width * TILE + pygame_renderer.HUD_WIDTH
+    assert lean.width == ward_map.width * TILE
+    assert lean.height == ward_map.height * TILE
+    assert lean.width < full.width, "map-only must actually be narrower"
+
+    for _ in range(3):
+        full.draw()
+        lean.draw()
+
+    # The HUD paints a solid column of PANEL_BG down the right-hand side.
+    hud_column = pygame.Rect(ward_map.width * TILE, 0,
+                             pygame_renderer.HUD_WIDTH, full.height)
+    assert pygame_renderer.PANEL_BG in colours(full.surface, hud_column)
+
+    whole = pygame.Rect(0, 0, lean.width, lean.height)
+    drawn = colours(lean.surface, whole)
+    assert len(drawn) > 20, "positive control: the ward must still be drawn"
+    assert pygame_renderer.PANEL_BG not in drawn, "the HUD is still being painted"
+
+    # Pixels alone cannot prove this: the HUD would be drawn at x=1200, off the
+    # narrower surface, so a renderer that ignored show_hud would look
+    # identical while still doing the work. Count the calls instead.
+    calls = {"full": 0, "lean": 0}
+    full._draw_hud = lambda *a, **k: calls.__setitem__("full", calls["full"] + 1)
+    lean._draw_hud = lambda *a, **k: calls.__setitem__("lean", calls["lean"] + 1)
+    full.draw()
+    lean.draw()
+    assert calls["full"] == 1, "positive control: the HUD is drawn when asked for"
+    assert calls["lean"] == 0, "map-only mode still ran the HUD"

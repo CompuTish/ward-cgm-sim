@@ -37,6 +37,38 @@ PARENT_ORIGIN = "https://isabelsmith.me"
 # second, so posting every frame would be 30x the traffic for no new numbers.
 PUBLISH_EVERY = 10
 
+# The hosting page appends this to the iframe URL to say "I am rendering the
+# readout myself". A fragment rather than frame detection because it is
+# deterministic and fails safe: anyone opening the demo directly has no
+# fragment, so they keep the in-canvas HUD and lose nothing.
+EXTERNAL_PANEL_FRAGMENT = "panel=external"
+
+
+def external_panel_requested() -> bool:
+    """True when the page around us is rendering the readout instead.
+
+    Read by several routes because this is the one thing here that cannot be
+    exercised off the browser: if none of them works the answer is False, the
+    canvas keeps its own HUD, and the demo is merely letterboxed rather than
+    left with no readout at all.
+    """
+    if sys.platform != "emscripten":
+        return False
+    try:
+        import platform as _platform
+
+        location = _platform.window.location
+        for attribute in ("hash", "href", "search"):
+            try:
+                value = str(getattr(location, attribute, "") or "")
+            except Exception:
+                continue
+            if EXTERNAL_PANEL_FRAGMENT in value:
+                return True
+    except Exception:  # pragma: no cover - browser-only path
+        return False
+    return False
+
 KEY_ACTIONS = {
     pygame.K_UP: Action.MOVE_UP,
     pygame.K_w: Action.MOVE_UP,
@@ -75,7 +107,8 @@ class Demo:
     def __init__(self):
         self.config = SimConfig()
         self.engine = WardEngine(self.config, seed=1)
-        self.renderer = WardRenderer(self.engine)
+        self.external_panel = external_panel_requested()
+        self.renderer = WardRenderer(self.engine, show_hud=not self.external_panel)
         self.agent = RuleBasedAgent()
         self.agent.reset()
         self.watching = True  # start by demonstrating the rule-based nurse

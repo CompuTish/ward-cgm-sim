@@ -26,8 +26,8 @@ scratch against `docs/ASSET_BRIEF.md`. No Nintendo, Game Freak, Two Point,
 Project Hospital, or other commercial-game artwork was traced, recoloured,
 copied, or included.
 
-The authors of this repository — Isabel Smith and Aatish Thakerar, per the root
-`LICENSE` — therefore hold the rights in this artwork in full, and to the extent
+The authors of this repository - Isabel Smith and Aatish Thakerar, per the root
+`LICENSE` - therefore hold the rights in this artwork in full, and to the extent
 permitted by law dedicate it to the public domain under **CC0 1.0 Universal**.
 See `LICENSE-CC0.txt`.
 

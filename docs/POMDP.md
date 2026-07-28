@@ -28,12 +28,12 @@ The model is the 7-tuple ⟨S, A, T, R, Ω, O, γ⟩.
 | Symbol | Meaning in this model |
 |---|---|
 | **S** | Full ward state: every patient's latent clinical state, sensor state and knowledge record; staff availability; the admissions queue; the shift clock; the agent's position. |
-| **A** | `Discrete(24)` — 4 movement + 20 interaction actions (§4). |
+| **A** | `Discrete(24)` - 4 movement + 20 interaction actions (§4). |
 | **T** | Stochastic transition over one 5-minute step (§5). |
 | **R** | Weighted sum of named components, safety-dominant (§6). |
 | **Ω** | The observation set: a 296-dimensional real vector (§3). |
 | **O** | The observation function: what is visible from where the agent stands, plus what it has previously learned and recorded. |
-| **γ** | 1.0 — finite horizon of 144 steps, so no discounting is needed. |
+| **γ** | 1.0 - finite horizon of 144 steps, so no discounting is needed. |
 
 **Episode** = one 12-hour shift = 144 steps of 5 minutes.
 
@@ -83,7 +83,7 @@ sensor accuracy and bias, whether the insulin regimen has changed, whether the
 patient has become ineligible, and whether a given staff role is actually free.
 
 **Glucose comes from a snapshot, not a live feed.** Telemetry is pushed to a
-handheld as well as the central monitor, so `CHECK_DASHBOARD` works anywhere —
+handheld as well as the central monitor, so `CHECK_DASHBOARD` works anywhere -
 but it costs a step, and what it returns is a picture of the board *at that
 moment* which then ages. Standing at the nurse station refreshes it for free.
 An agent that never checks has no glucose information at all; one that checked
@@ -93,16 +93,16 @@ ten minutes ago is working from ten-minute-old numbers.
 board. It was abandoned because it made the comparison null rather than
 realistic: the policy spent the shift walking back and forth and treated almost
 nobody, so both arms collapsed to usual care. The handheld model preserves the
-thing that matters — information costs a step and decays — without that
+thing that matters - information costs a step and decays - without that
 artefact.)
 
 ## 4. Action space
 
 `Discrete(24)`.
 
-**Movement (4)** — `MOVE_UP/DOWN/LEFT/RIGHT`, one tile per step.
+**Movement (4)** - `MOVE_UP/DOWN/LEFT/RIGHT`, one tile per step.
 
-**Interactions (20)** — applied to the bed the agent is standing next to;
+**Interactions (20)** - applied to the bed the agent is standing next to;
 `CHECK_DASHBOARD` works from anywhere but costs a step and yields a snapshot
 that ages (see above).
 
@@ -126,7 +126,7 @@ that ages (see above).
 | `WAIT` | Do nothing |
 
 Two design notes. **Avoiding an inappropriate enrolment** is not an action: it
-is expressed by *not* choosing `ENROL`, which is penalised when wrong — so
+is expressed by *not* choosing `ENROL`, which is penalised when wrong - so
 avoidance is learned behaviour rather than a button. **Asking for help is split
 by role** so that choosing the right colleague is itself a decision; asking the
 wrong role wastes the step.
@@ -135,21 +135,21 @@ wrong role wastes the step.
 
 **Glucose.** A mean-reverting process toward each patient's usual level, plus
 meal and insulin events that ramp over 30 and 60 minutes respectively (never as
-instantaneous jumps — an insulin dose does not move glucose 2 mmol/L in five
+instantaneous jumps - an insulin dose does not move glucose 2 mmol/L in five
 minutes, and modelling it that way makes the trajectory untrackable by any
 sensor). Deterioration episodes drift a patient toward hypo- or hyperglycaemia
 with probability scaled by their individual risk.
 
 **CGM sensing.** Three layers, deliberately distinct:
 
-1. `true_glucose` — latent, never observed by anyone.
-2. **CGM** — the lagged (~10 min), biased, noisy value on the dashboard.
+1. `true_glucose` - latent, never observed by anyone.
+2. **CGM** - the lagged (~10 min), biased, noisy value on the dashboard.
    Each sensor carries a fixed calibration bias drawn at insertion; noise
    triples when a sensor degrades; transient artefacts produce false alarms.
-3. **Point-of-care capillary** — small error, and **trusted over CGM** wherever
+3. **Point-of-care capillary** - small error, and **trusted over CGM** wherever
    the two conflict.
 
-**Sensor failure is silent.** Signal loss produces *no alarm* — the data simply
+**Sensor failure is silent.** Signal loss produces *no alarm* - the data simply
 stops arriving, and the only cue is a growing "steps since last reading" gap.
 
 **Staff.** Each role is a hidden two-state Markov chain. The agent sees only a
@@ -169,16 +169,16 @@ involvement accelerates it.
 The telemetry-on and telemetry-off arms share a seed across **partitioned**
 streams, so both arms simulate the *same ward*:
 
-- `engine.rng` — ward level (patient sampling, arrivals, staff). Consumes
+- `engine.rng` - ward level (patient sampling, arrivals, staff). Consumes
   identically in both arms.
-- `PatientState.rng` / `.rng_sensor` / `.rng_care` / `.rng_action` — that
+- `PatientState.rng` / `.rng_sensor` / `.rng_care` / `.rng_action` - that
   patient's physiology and flow, their CGM chain, routine checks on them, and
   consequences of the agent acting on them.
 
 **Invariant:** an intervention on one patient may change how many draws *that*
 patient consumes, but must not change any other patient's random outcomes. This
 is enforced by `tests/test_counterfactual_rng.py`. Shared *resources* (beds,
-staff) still couple patients — that is a real ward effect and is meant to
+staff) still couple patients - that is a real ward effect and is meant to
 remain; only spurious coupling through randomness is eliminated.
 
 ## 6. Reward function
@@ -244,7 +244,7 @@ individualised alarm threshold, true discharge readiness.
 
 Visible: bed, location (in bed / walking / off ward), enrolment status, and any
 fact the agent has *learned*, recorded in `PatientKnowledge` with the step it
-was learned — so information can go stale.
+was learned - so information can go stale.
 
 Patients move visibly on the map for admissions, transfers and discharges.
 
@@ -262,7 +262,7 @@ Patients move visibly on the map for admissions, transfers and discharges.
   suppresses single-sample artefacts. This is the main lever for trading alarm
   burden against detection latency.
 - **Individualised hyperglycaemia thresholds** exist for patients with chronic
-  uncontrolled hyperglycaemia — the alarm-fatigue lever. Without them, those
+  uncontrolled hyperglycaemia - the alarm-fatigue lever. Without them, those
   patients alarm constantly and the board becomes noise.
 - **Trend alarms are computed on a smoothed signal**; differencing raw samples
   doubles the noise and makes trend alarms fire on nothing.
@@ -273,11 +273,11 @@ Patients move visibly on the map for admissions, transfers and discharges.
 
 ## 9. Eligibility and de-enrolment
 
-**Inclusion — all must hold:** diabetes of any type; ≥2 insulin injections per
+**Inclusion - all must hold:** diabetes of any type; ≥2 insulin injections per
 day; expected ward stay ≥48 hours; capacity to give verbal informed consent;
 consent given.
 
-**Exclusion — any excludes:** <2 injections per day; expected stay <48 hours;
+**Exclusion - any excludes:** <2 injections per day; expected stay <48 hours;
 lacks capacity; declines; pregnancy or breastfeeding; end-of-life care.
 
 **Later ineligibility:** insulin reduced to once daily, transition to
@@ -286,7 +286,7 @@ withdrawal of consent. Any of these requires de-enrolment; failing to
 de-enrol accrues a per-step penalty, and de-enrolling somebody who still
 qualifies is penalised too.
 
-Consent is deliberately **not** re-tested for already-enrolled patients — they
+Consent is deliberately **not** re-tested for already-enrolled patients - they
 have consented, and re-testing would flag the whole cohort.
 
 ## 10. Staff and escalation
@@ -305,10 +305,10 @@ penalised.
 discharge pipeline; overcrowding penalties above a queue threshold; and
 termination on unsafe overcrowding.
 
-## 12. Usual care — the comparator
+## 12. Usual care - the comparator
 
 Critically, the counterfactual is **telemetry versus routine monitoring**, not
-telemetry versus nothing. Every patient — including those on CGM — receives
+telemetry versus nothing. Every patient - including those on CGM - receives
 routine capillary rounds and symptom recognition, modelled in
 `config.UsualCareConfig` at roughly 4–6 hourly detection probability, higher
 when a patient is symptomatically severe. CGM is *additive* to standard care.
@@ -322,12 +322,12 @@ whether the alarm gets there **first, and by how much**.
 `scripts/evaluate.py` runs matched-seed batches with `telemetry_enabled`
 True and False and compares:
 
-**Primary** — mean hypoglycaemia **detection delay** (steps below 3.9 mmol/L
+**Primary** - mean hypoglycaemia **detection delay** (steps below 3.9 mmol/L
 before anybody knows) and detection rate, both restricted to the *monitored
 cohort* so the arms are like-for-like. Ward-wide figures are diluted by the
 majority of patients who are never eligible.
 
-**Secondary** — time below range, severe hypoglycaemia events, serious adverse
+**Secondary** - time below range, severe hypoglycaemia events, serious adverse
 events, incident-free shift rate, alarm burden and false-alarm rate, enrolment
 precision and recall, discharge delay, queue length, overcrowding.
 
@@ -339,7 +339,7 @@ denominator and the detection rate becomes meaningless.
 **What this can and cannot show.** It is a simulation study of a workflow
 model. It cannot demonstrate clinical benefit. It can show whether a modelled
 mechanism plausibly produces one, where the effect is sensitive to assumptions,
-and which parameters matter most — which is exactly what is useful before
+and which parameters matter most - which is exactly what is useful before
 designing a real study.
 
 ## 14. Calibration and limitations
@@ -350,7 +350,7 @@ mechanism observable in a tractable number of episodes. They are starting
 points for sensitivity analysis, not estimates.
 
 **Before this model is used to inform any real study design, the following
-inputs must be replaced with sourced estimates** — from local ward audit data
+inputs must be replaced with sourced estimates** - from local ward audit data
 where possible, otherwise from published inpatient diabetes literature:
 
 | Input | Where it lives | Why it matters |

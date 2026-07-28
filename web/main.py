@@ -120,6 +120,7 @@ class Demo:
         # so a broken channel never leaves a ward with no numbers at all.
         self.published_ok = False
         self.publish_error = ""
+        self._ack_installed = False
 
     def restart(self, telemetry: bool | None = None):
         if telemetry is not None:
@@ -209,22 +210,24 @@ class Demo:
         }
 
     def publish(self) -> bool:
-        """Send the readout to the hosting page. False when it could not be sent.
+        """Send the readout to the hosting page. False when it did not arrive.
 
         The demo is served from its own origin on purpose, so the page cannot
         reach into this frame - a one-way postMessage is the whole channel, and
         it is addressed to a single origin rather than "*".
 
-        Several routes are tried because pygbag's JS bridge exposes a limited
-        surface and which of these works cannot be checked off the browser.
-        The reason the last one failed is kept, and drawn on the canvas, so a
-        silent failure becomes a visible one instead of an empty panel.
+        Sent is not the same as delivered. postMessage does not raise when the
+        target turns out not to be at the origin we addressed, so a send can
+        succeed while nothing ever arrives - which is exactly what happened.
+        The page therefore acknowledges, and only that acknowledgement counts.
+        Both `parent` and `top` are posted to, because how deeply the runtime
+        frames the canvas is not something we can establish from here; the
+        pinned origin means only the real page can receive either one.
         """
         if sys.platform != "emscripten":
             self.publish_error = "not running in a browser"
             return False
 
-        payload = json.dumps(self.state())
         try:
             import platform as _platform
 
@@ -233,7 +236,20 @@ class Demo:
             self.publish_error = "no window: %s" % error
             return False
 
+        if not self._ack_installed:
+            try:  # a listener that records the page's acknowledgement
+                window.eval(
+                    "window.__wardAck=0;window.addEventListener('message',"
+                    "function(e){if(e.origin===%r&&e.data==='ward-cgm-sim-ack')"
+                    "window.__wardAck=1});" % PARENT_ORIGIN
+                )
+                self._ack_installed = True
+            except Exception as error:  # pragma: no cover - browser-only path
+                self.publish_error = "no ack listener: %s" % error
+
+        payload = json.dumps(self.state())
         errors = []
+        sent = False
         for name in ("parent", "top"):
             try:
                 target = getattr(window, name, None)
@@ -241,23 +257,34 @@ class Demo:
                     errors.append("%s missing" % name)
                     continue
                 target.postMessage(payload, PARENT_ORIGIN)
-                self.published_ok = True
-                self.publish_error = ""
-                return True
+                sent = True
             except Exception as error:  # pragma: no cover - browser-only path
                 errors.append("%s: %s" % (name, error))
 
-        try:  # last resort: hand the string to a helper defined in JS
-            helper = "window.__wardPost=function(s){window.parent.postMessage(s,%r)}" % PARENT_ORIGIN
-            window.eval(helper)
-            window.__wardPost(payload)
+        if not sent:
+            try:
+                helper = "window.__wardPost=function(s){window.parent.postMessage(s,%r);window.top.postMessage(s,%r)}" % (PARENT_ORIGIN, PARENT_ORIGIN)
+                window.eval(helper)
+                window.__wardPost(payload)
+                sent = True
+            except Exception as error:  # pragma: no cover - browser-only path
+                errors.append("eval: %s" % error)
+
+        try:
+            acknowledged = bool(getattr(window, "__wardAck", 0))
+        except Exception:  # pragma: no cover - browser-only path
+            acknowledged = False
+
+        if acknowledged:
             self.published_ok = True
             self.publish_error = ""
             return True
-        except Exception as error:  # pragma: no cover - browser-only path
-            errors.append("eval: %s" % error)
 
-        self.publish_error = "; ".join(errors)[:120]
+        self.published_ok = False
+        self.publish_error = (
+            "sent, no reply from the page yet" if sent
+            else ("; ".join(errors)[:110] or "nowhere to send to")
+        )
         return False
 
     def hint_lines(self) -> list[str]:

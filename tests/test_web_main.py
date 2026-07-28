@@ -597,26 +597,122 @@ def test_publish_reports_every_route_it_tried(web_main, monkeypatch):
         assert expected in demo.publish_error, demo.publish_error
 
 
-def test_publish_succeeds_through_the_first_route_that_works(web_main, monkeypatch):
+def test_sending_is_not_the_same_as_arriving(web_main, monkeypatch):
+    """The bug this exists for.
+
+    postMessage does not raise when the window it reaches turns out not to be
+    at the origin we addressed, so the demo believed it had delivered a readout
+    that never arrived - and, believing it, stopped drawing its own. Only the
+    page's acknowledgement counts as delivery.
+    """
     import types
 
     sent = []
 
-    class Parent:
-        def postMessage(self, payload, origin):
-            sent.append((payload, origin))
+    class Window:
+        __wardAck = 0
 
+        def __init__(self):
+            self.parent = types.SimpleNamespace(
+                postMessage=lambda payload, origin: sent.append(("parent", payload, origin))
+            )
+            self.top = types.SimpleNamespace(
+                postMessage=lambda payload, origin: sent.append(("top", payload, origin))
+            )
+
+        def eval(self, source):
+            evaluated.append(source)
+
+    evaluated = []
+    window = Window()
     monkeypatch.setattr(web_main.sys, "platform", "emscripten")
-    monkeypatch.setitem(
-        sys.modules, "platform", types.SimpleNamespace(window=types.SimpleNamespace(parent=Parent()))
-    )
+    monkeypatch.setitem(sys.modules, "platform", types.SimpleNamespace(window=window))
 
     demo = web_main.Demo()
+    assert demo.publish() is False, "an unacknowledged send is not a delivery"
+
+    # Without the listener the acknowledgement can never be seen, so the demo
+    # would sit behind its fallback readout for ever.
+    assert any("ward-cgm-sim-ack" in source for source in evaluated), (
+        "no listener was installed to notice the page replying"
+    )
+    assert any(web_main.PARENT_ORIGIN in source for source in evaluated), (
+        "the ack listener accepts a reply from any origin"
+    )
+    assert demo.published_ok is False
+    assert "no reply" in demo.publish_error
+
+    # Both windows are posted to, because which one is the page is not knowable
+    # from here; the pinned origin is what keeps that safe.
+    assert {target for target, _p, _o in sent} == {"parent", "top"}
+    for _target, payload, origin in sent:
+        assert origin == web_main.PARENT_ORIGIN
+        import json as _json
+        assert _json.loads(payload)["type"] == "ward-cgm-sim"
+
+    # Once the page acknowledges, the canvas can stand down.
+    window.__wardAck = 1
     assert demo.publish() is True
     assert demo.published_ok is True
     assert demo.publish_error == ""
-    assert len(sent) == 1
-    payload, origin = sent[0]
-    assert origin == web_main.PARENT_ORIGIN
-    import json as _json
-    assert _json.loads(payload)["type"] == "ward-cgm-sim"
+
+
+def test_an_undelivered_readout_keeps_the_numbers_on_the_ward(web_main, monkeypatch):
+    """Belt and braces on the regression: no ack, so the canvas still speaks."""
+    import types
+
+    class Window:
+        __wardAck = 0
+        parent = types.SimpleNamespace(postMessage=lambda *a: None)
+        top = types.SimpleNamespace(postMessage=lambda *a: None)
+
+        def eval(self, _source):
+            return None
+
+    monkeypatch.setattr(web_main.sys, "platform", "emscripten")
+    monkeypatch.setitem(sys.modules, "platform", types.SimpleNamespace(window=Window()))
+
+    demo = web_main.Demo()
+    demo.external_panel = True
+    demo.publish()
+    assert demo.published_ok is False
+
+    before = pygame.image.tobytes(demo.renderer.surface, "RGB")
+    demo.draw_overlay()
+    assert pygame.image.tobytes(demo.renderer.surface, "RGB") != before, (
+        "the readout never arrived and the ward shows no numbers"
+    )
+    assert any("not receiving" in line for line in demo.fallback_lines())
+
+
+def test_the_page_has_every_element_its_readout_script_looks_up():
+    """The bug that silenced the live readout twice over.
+
+    The listener guarded on a wrapper id, the tab restructure removed that id,
+    and the whole listener returned before registering - so the demo published
+    correctly and the page dropped every reading without a word. Nothing in
+    either repository connected the script to the markup it depends on.
+    """
+    import re
+
+    page = (
+        REPO_ROOT.parent / "site_isabelsmith.me" / "public" / "projects"
+        / "ward-sim" / "index.html"
+    )
+    if not page.is_file():
+        pytest.skip("the project page lives in the parent repository")
+    markup = page.read_text(encoding="utf-8")
+
+    present = set(re.findall(r'id="([^"]+)"', markup))
+    assert len(present) > 10, "positive control: the page must declare ids"
+
+    looked_up = set(re.findall(r"getElementById\('([^']+)'\)", markup))
+    looked_up |= {
+        "live-" + name
+        for group in re.findall(r"\[([^\]]*?)\]\.forEach\(function \(name\)", markup)
+        for name in re.findall(r"'([a-z]+)'", group)
+    }
+    assert len(looked_up) > 5, "positive control: the script must look ids up"
+
+    missing = looked_up - present
+    assert not missing, f"the script reads ids the page does not have: {sorted(missing)}"

@@ -45,6 +45,10 @@ KEY_ACTIONS = {
     pygame.K_1: Action.TREAT_HYPO,
     pygame.K_2: Action.TREAT_HYPER,
     pygame.K_q: Action.ESCALATE,
+    pygame.K_F1: Action.ASK_HELP_HCA,
+    pygame.K_F2: Action.ASK_HELP_NURSE,
+    pygame.K_F3: Action.ASK_HELP_DOCTOR,
+    pygame.K_F4: Action.ASK_HELP_SURGEON,
     pygame.K_t: Action.TROUBLESHOOT_SENSOR,
     pygame.K_p: Action.SUPPORT_DISCHARGE,
     pygame.K_b: Action.PRIORITISE_BEDFLOW,
@@ -107,9 +111,12 @@ class Demo:
         telemetry = "telemetry ON" if self.config.telemetry_enabled else "telemetry OFF"
         hints = [
             f"{mode}  -  {telemetry}",
-            "TAB take over / hand back   F5 new shift   F6 toggle telemetry",
-            "arrows move  D dashboard  C check  N notes  K consent  E enrol",
-            "SPACE alarm  G point-of-care  1 treat hypo  2 treat hyper  Q escalate",
+            "TAB take over / hand back    F5 new shift    F6 toggle telemetry",
+            "arrows/WASD move    D dashboard    C check patient    N notes",
+            "K consent    E enrol    R review eligibility    X de-enrol",
+            "SPACE alarm    G point-of-care    1 treat hypo    2 treat hyper",
+            "Q escalate    T troubleshoot sensor    P support discharge",
+            "B prioritise bed flow    . wait    F1-F4 ask HCA/nurse/doctor/surgeon",
         ]
         banner = "SHIFT COMPLETE - press any key for a new shift" if self.finished else None
         if banner:

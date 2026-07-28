@@ -150,11 +150,22 @@ The idle frame is the middle column and is used when standing still.
 | 6 | Diabetes specialist nurse | Purple tunic |
 | 7 | Patient, walking | Hospital gown, pale, slightly slower/stooped posture |
 
-**Skin tones:** each character needs **5 skin-tone variants**. Supply either as
-separate rows, or — strongly preferred — design so that skin occupies a
-dedicated palette index that can be swapped programmatically. Suggested tones:
-`#F0CDB2`, `#DEB08C`, `#BE8C68`, `#966848`, `#6C4A34`. Hair colour should vary
-too; two or three options per character is plenty.
+**Skin tones:** each character needs **5 skin-tone variants**. Two acceptable
+formats — the first is strongly preferred:
+
+- **Preferred — one indexed sheet.** A single `characters.png` of
+  **7 characters × 4 directions × 3 frames = 84 sprites**, laid out as 28 rows
+  (character 1 down/left/right/up, then character 2, and so on) × 3 columns.
+  Skin occupies **dedicated palette indices** listed in the accompanying index
+  file, so the code can swap them at load time. Supply the five tones as a
+  palette table, not as extra sprites.
+- **Alternative — pre-rendered variants.** The same sheet repeated once per
+  skin tone: **7 × 4 × 3 × 5 = 420 sprites**, as five separate files
+  `characters_skin1.png` … `characters_skin5.png`, each 28 rows × 3 columns.
+
+Suggested tones: `#F0CDB2`, `#DEB08C`, `#BE8C68`, `#966848`, `#6C4A34`. Hair
+colour should vary too; two or three options per character is plenty, and may be
+baked in rather than indexed.
 
 **Patient in bed — `patients_in_bed.png`, 16 × 16, 5 tiles**
 A patient lying under a blanket, head on the pillow, one per skin tone. This
@@ -162,10 +173,16 @@ overlays the bed tile, so it must align with tile 15 exactly.
 
 ---
 
-## 4. Status overlays — `overlays.png`
+## 4. Status overlays
 
-16 × 16 each, drawn on top of a bed tile. These carry the actual clinical
-meaning in the simulation, so **readability at a glance beats prettiness**.
+These carry the actual clinical meaning in the simulation, so **readability at a
+glance beats prettiness**. They come in two sheets because they anchor
+differently.
+
+### 4a. Bed overlays — `overlays_bed.png`
+
+16 × 16 each. Composited **on top of a bed tile**, aligned to the same 16 × 16
+grid cell, drawn above the bed and above the patient-in-bed sprite.
 
 1. **Sensor attached, working** — a small green pip or a stylised CGM patch,
    top-right corner of the tile
@@ -179,14 +196,23 @@ meaning in the simulation, so **readability at a glance beats prettiness**.
 8. **Point-of-care test in progress** — a small glucometer or droplet icon
 9. **Treatment given** — a tick or a small syringe/gel icon
 10. **Patient ready for discharge** — a suitcase or an open-door icon
-11. **Player highlight ring** — a soft ring/arrow that sits under the player
-    sprite so they are never lost on a busy ward
-12. **Selected/adjacent bed indicator** — a subtle frame showing which bed the
+11. **Selected/adjacent bed indicator** — a subtle frame showing which bed the
     player can currently interact with
 
 Alarm overlays 3–7 should be designed to **animate by alternating with an empty
 frame** (a simple two-state blink), so please keep them as a single tile each;
 the code handles the blink.
+
+### 4b. Effect overlays — `overlays_effect.png`
+
+Anchored to a **character**, not a bed, and drawn **underneath** the character
+sprite so it reads as something the character is standing on or in.
+
+1. **Player highlight ring** — 16 × 8 px, an ellipse/glow anchored to the
+   player's feet (bottom-centre of their tile) so they are never lost on a busy
+   ward. Must read clearly against both the pale floor and the darker corridor.
+2. **Staff busy indicator** — 16 × 16, a small marker shown near a colleague
+   who has been asked for help and is occupied. *Optional.*
 
 ---
 
@@ -210,10 +236,13 @@ a bed to interact with it.
 
 ## 6. Deliverables
 
-- `tiles.png` — the tileset, packed in the order above
-- `characters.png` — 7 characters × 4 directions × 3 frames
-- `patients_in_bed.png` — 5 tiles
-- `overlays.png` — 12 tiles
+- `tiles.png` — 36 tiles, packed in the order above (plus any optional extras,
+  appended after 36 and listed in the index)
+- `characters.png` — 84 sprites (28 rows × 3 columns) with an indexed skin
+  palette, **or** five `characters_skinN.png` files of the same layout
+- `patients_in_bed.png` — 5 tiles, one per skin tone, aligned to bed tile 15
+- `overlays_bed.png` — 11 tiles, bed-anchored
+- `overlays_effect.png` — 1 required (16 × 8 player ring) + 1 optional
 - A plain-text or JSON index listing what is at each tile position
 - *Optional:* the source file (Aseprite `.ase` strongly preferred, or `.pyxel`,
   or layered `.psd`)

@@ -29,6 +29,11 @@ scripts/             play, run_baseline, evaluate, train_ppo, build_web
 web/main.py          browser entrypoint (pygbag)
 ```
 
+**Source of truth:** `ward_cgm_sim/` is the only place to edit. `web/ward_cgm_sim/`
+is a **generated copy** written by `scripts/build_web.py` on every build and is
+gitignored — hand-editing it will be silently overwritten and the change lost.
+Same for `web/build/`.
+
 **One tick, in order:** resolve the agent's action → advance physiology →
 advance the sensor chain and alarms → advance staff and bed flow → score →
 check termination. Actions resolve *before* physiology so that treating a

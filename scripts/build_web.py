@@ -11,7 +11,7 @@ and pulls in numpy, neither of which exists in the pygbag runtime.
 
 Usage:
     python scripts/build_web.py             # vendor app code, verify, build
-    python scripts/build_web.py --serve     # ...then serve it locally
+    python scripts/build_web.py --serve     # ...then serve the BUILT output locally
     python scripts/build_web.py --vendor-only
 
 The runtime is fetched from the pygame-web CDN. `--vendor-runtime` will instead
@@ -75,6 +75,22 @@ def verify() -> None:
     print("import-safety check passed")
 
 
+def serve_build() -> None:
+    """Serve the built output over a local threading HTTP server.
+
+    pygbag's own `--serve` regenerates the page and does not carry the canvas
+    CSS injected after a build, so it is not a faithful visual check. This
+    serves exactly what would be deployed.
+    """
+    import functools
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    root = str(WEB_DIR / "build" / "web")
+    handler = functools.partial(SimpleHTTPRequestHandler, directory=root)
+    print("serving the built demo on http://127.0.0.1:8000  (ctrl-c to stop)")
+    ThreadingHTTPServer(("127.0.0.1", 8000), handler).serve_forever()
+
+
 def build(serve: bool) -> None:
     command = [sys.executable, "-m", "pygbag", "--title", "Ward CGM simulator"]
     if not serve:
@@ -97,11 +113,26 @@ def build(serve: bool) -> None:
 # default smooth interpolation turns every sprite and every glyph to mush.
 CRISP_CSS = """
 <style id="ward-sim-crisp">
-  canvas, #canvas, #screen {
+  /* pygbag's template sets canvas { width:100%; height:100% }, which stretches
+     the bitmap to whatever box it lands in and distorts the art whenever the
+     container's aspect ratio differs from the canvas. Sizing from the canvas's
+     own intrinsic dimensions and capping with max-* keeps it proportional, and
+     nearest-neighbour scaling keeps pixel art sharp when it is scaled up. */
+  canvas.emscripten, canvas, #canvas, #screen {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     -ms-interpolation-mode: nearest-neighbor;
+    /* Fill the available box but letterbox rather than distort: object-fit
+       preserves the bitmap's aspect ratio inside whatever element size
+       pygbag's template asks for. Sizing to intrinsic dimensions instead
+       would be undistorted but would never scale up to fill. */
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
   }
+  html, body { height: 100%; }
 </style>
 """
 
@@ -217,11 +248,14 @@ def main() -> None:
     vendor()
     verify()
     if not args.vendor_only:
-        build(serve=args.serve)
-        if not args.serve:
-            make_crisp()
-        if not args.serve and args.vendor_runtime:
+        # Always a real build, then the canvas CSS, then optionally serve what
+        # was actually built - so --serve shows what would be deployed.
+        build(serve=False)
+        make_crisp()
+        if args.vendor_runtime:
             vendor_runtime()
+        if args.serve:
+            serve_build()
 
 
 if __name__ == "__main__":

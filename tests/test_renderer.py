@@ -294,7 +294,13 @@ def test_rgb_array_rendering_works_without_a_display():
     assert result.returncode == 0, result.stderr[-2000:]
     tag, height, width, distinct = result.stdout.strip().splitlines()[-1].split()
     assert tag == "OK"
-    assert (int(height), int(width)) == (672, 1140)
+    # Derived, not hard-coded: TILE is deliberately adjustable and a literal
+    # here would just have to be chased every time it moves.
+    ward_map = WardEngine(SimConfig(), seed=1).ward_map
+    assert (int(height), int(width)) == (
+        ward_map.height * TILE,
+        ward_map.width * TILE + pygame_renderer.HUD_WIDTH,
+    )
     # Positive control: a frame that raised, or drew nothing, is not a pass.
     assert int(distinct) > 20, "the frame came back nearly blank"
 
@@ -412,3 +418,63 @@ def test_the_ward_floor_is_drawn_under_every_feature_tile():
     assert pygame_renderer.PANEL_BG not in drawn, (
         "the panel background is showing through a feature tile"
     )
+
+
+def test_colleagues_walk_the_ward_rather_than_pacing_a_few_tiles():
+    """They used to oscillate over three tiles beside a fixed anchor.
+
+    That reads as a glitch, not a ward. Each colleague now walks to a random
+    destination and on to the next, so over a shift they cover real ground.
+    """
+    renderer = run_shift(steps=1)
+    visited = {role: {position} for role, position in renderer._staff_at.items()}
+    assert len(visited) == 5, "positive control: five colleagues on the ward"
+
+    for _ in range(600):
+        renderer.draw()
+        for role, position in renderer._staff_at.items():
+            visited[role].add(position)
+
+    for role, tiles in visited.items():
+        assert len(tiles) > 10, f"{role} only reached {len(tiles)} tiles"
+
+
+def test_colleagues_stay_on_walkable_ground_and_out_of_each_other():
+    renderer = run_shift(steps=1)
+    ward_map = renderer.engine.ward_map
+    for _ in range(400):
+        renderer.draw()
+        positions = list(renderer._staff_at.values())
+        for role, (x, y) in renderer._staff_at.items():
+            assert ward_map.walkable(x, y), f"{role} walked into {(x, y)}"
+        assert len(positions) == len(set(positions)), "two colleagues on one tile"
+
+
+def test_colleague_movement_never_touches_the_simulation():
+    """Presentation state only - CONTEXT_PACK section 4.
+
+    If staff drew from `engine.rng`, drawing the ward would change the ward,
+    and the telemetry-versus-routine comparison would be meaningless.
+    """
+    engine = WardEngine(SimConfig(), seed=4)
+    renderer = WardRenderer(engine, headless=True)
+    before_rng = engine.rng.getstate()
+    before_state = (engine.step_index, engine.agent_x, engine.agent_y,
+                    len(engine.flow.queue))
+    patient_states = [
+        (p.patient_id, p.true_glucose, p.rng.getstate(), p.rng_sensor.getstate())
+        for p in engine.flow.patients()
+    ]
+    assert patient_states, "positive control: the ward must have patients"
+
+    for _ in range(300):
+        renderer.draw()
+
+    assert engine.rng.getstate() == before_rng, "rendering consumed the ward RNG"
+    assert (engine.step_index, engine.agent_x, engine.agent_y,
+            len(engine.flow.queue)) == before_state
+    after = [
+        (p.patient_id, p.true_glucose, p.rng.getstate(), p.rng_sensor.getstate())
+        for p in engine.flow.patients()
+    ]
+    assert after == patient_states, "rendering disturbed a patient stream"

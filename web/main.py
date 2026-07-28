@@ -33,7 +33,10 @@ KEY_ACTIONS = {
     pygame.K_LEFT: Action.MOVE_LEFT,
     pygame.K_a: Action.MOVE_LEFT,
     pygame.K_RIGHT: Action.MOVE_RIGHT,
-    pygame.K_d: Action.CHECK_DASHBOARD,
+    # D completes WASD. The dashboard moved to M (monitor): bound to D it left
+    # the nurse unable to walk right while the on-screen help promised WASD.
+    pygame.K_d: Action.MOVE_RIGHT,
+    pygame.K_m: Action.CHECK_DASHBOARD,
     pygame.K_c: Action.CHECK_PATIENT,
     pygame.K_n: Action.REVIEW_NOTES,
     pygame.K_k: Action.ASK_CONSENT,
@@ -104,27 +107,38 @@ class Demo:
             self.watching = False
             self.advance(KEY_ACTIONS[event.key])
 
-    def draw_overlay(self) -> None:
-        surface = self.renderer.surface
-        font = self.renderer.font_small
+    def hint_lines(self) -> list[str]:
+        """The on-screen help, as text.
+
+        Separate from drawing it so the tests can check that what the player is
+        told matches what KEY_ACTIONS actually does - the two drifted apart
+        once already, leaving D documented as the dashboard while it moved to
+        movement. See tests/test_web_main.py.
+        """
         mode = "watching the rule-based nurse" if self.watching else "you are the nurse"
         telemetry = "telemetry ON" if self.config.telemetry_enabled else "telemetry OFF"
         hints = [
             f"{mode}  -  {telemetry}",
             "TAB take over / hand back    F5 new shift    F6 toggle telemetry",
-            "arrows/WASD move    D dashboard    C check patient    N notes",
+            "arrows/WASD move    M dashboard    C check patient    N notes",
             "K consent    E enrol    R review eligibility    X de-enrol",
             "SPACE alarm    G point-of-care    1 treat hypo    2 treat hyper",
             "Q escalate    T troubleshoot sensor    P support discharge",
             "B prioritise bed flow    . wait    F1-F4 ask HCA/nurse/doctor/surgeon",
         ]
-        banner = "SHIFT COMPLETE - press any key for a new shift" if self.finished else None
-        if banner:
-            hints.insert(0, banner)
+        if self.finished:
+            hints.insert(0, "SHIFT COMPLETE - press any key for a new shift")
+        return hints
+
+    def draw_overlay(self) -> None:
+        surface = self.renderer.surface
+        font = self.renderer.font_small
+        hints = self.hint_lines()
+        banner = self.finished
 
         # Solid backing panel: these hints sit over the pale ward floor, and
         # without it the text is unreadable.
-        line_height = 19
+        line_height = font.get_linesize()
         height = line_height * len(hints) + 14
         width = max(font.size(line)[0] for line in hints) + 28
         panel = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -165,4 +179,9 @@ async def main() -> None:
         await asyncio.sleep(0)
 
 
-asyncio.run(main())
+# pygbag runs this file as the entry script, so this still starts the demo in
+# the browser - but it also lets the tests import Demo and KEY_ACTIONS without
+# the frame loop taking over the process. Without the guard this module could
+# not be imported at all, which is why none of it had any coverage.
+if __name__ == "__main__":
+    asyncio.run(main())

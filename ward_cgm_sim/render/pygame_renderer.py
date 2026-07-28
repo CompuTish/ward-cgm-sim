@@ -9,6 +9,8 @@ exactly the cue the agent is supposed to notice.
 Stdlib + pygame only (ships to the browser build).
 """
 
+import random
+
 import pygame
 
 from ..core.alarms import AlarmKind
@@ -17,7 +19,9 @@ from ..core.ward_map import BED, DRUG_ROOM, ENTRANCE, FLOOR, STATION, WALL
 from . import sprites
 from .sprites import TILE, SpriteSheet, u
 
-HUD_WIDTH = 340
+# Scaled with TILE so the canvas keeps its aspect ratio: the project page
+# sets the iframe from it, and a change here would letterbox the demo.
+HUD_WIDTH = 340 * TILE // 32
 PANEL_BG = (28, 32, 42)
 PANEL_ALT = (38, 44, 56)
 TEXT = (232, 236, 244)
@@ -30,6 +34,19 @@ ALARM_COLOURS = {
     AlarmKind.RAPID_FALL: (236, 152, 62),
     AlarmKind.HYPER: (226, 178, 60),
     AlarmKind.RAPID_RISE: (206, 190, 90),
+}
+
+# Rendered frames between one step of a background colleague. At 30fps this is
+# a little over three tiles a second - a walk, not a skate.
+STAFF_STEP_FRAMES = 9
+
+# Where each colleague starts the shift. They walk off from here.
+STAFF_START_TILES = {
+    "hca": (5, 8),
+    "nurse": (18, 8),
+    "doctor": (9, 16),
+    "surgeon": (17, 16),
+    "diabetes": (21, 11),
 }
 
 # The overlay for each alarm kind. Used when the art is present;
@@ -60,7 +77,7 @@ class WardRenderer:
         map_w = engine.ward_map.width * TILE
         map_h = engine.ward_map.height * TILE
         self.width = map_w + HUD_WIDTH
-        self.height = max(map_h, 560)
+        self.height = max(map_h, 560 * TILE // 32)
 
         if headless:
             self.surface = pygame.Surface((self.width, self.height))
@@ -72,9 +89,9 @@ class WardRenderer:
         # directory with no manifest exercises the procedural fallback.
         self.sprites = SpriteSheet(assets_dir)
         # Sized against the tile so the HUD stays legible if TILE changes.
-        self.font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15)
-        self.font_small = pygame.font.SysFont("menlo,dejavusansmono,monospace", 13)
-        self.font_big = pygame.font.SysFont("menlo,dejavusansmono,monospace", 26, bold=True)
+        self.font = pygame.font.SysFont("menlo,dejavusansmono,monospace", 15 * TILE // 32)
+        self.font_small = pygame.font.SysFont("menlo,dejavusansmono,monospace", 13 * TILE // 32)
+        self.font_big = pygame.font.SysFont("menlo,dejavusansmono,monospace", 26 * TILE // 32, bold=True)
         # Every HUD row is laid out from the measured line height rather than
         # hard-coded offsets, so a font change cannot silently overlap boxes.
         self.line = self.font.get_linesize()
@@ -86,6 +103,20 @@ class WardRenderer:
         # rather than on the patient, and never feeds back into the engine.
         self._facing: dict = {}
         self._last_seen: dict = {}
+
+        # Where each colleague currently stands, and where they are heading.
+        # The RNG is renderer-local and seeded with a fixed string: staff
+        # movement must never draw from the engine's streams (CONTEXT_PACK §4)
+        # and must be identical between processes.
+        self._staff_rng = random.Random("ward-cgm-sim|render|background-staff")
+        self._staff_at: dict = dict(STAFF_START_TILES)
+        self._staff_goal: dict = {}
+        self._walkable_tiles = [
+            (x, y)
+            for y in range(engine.ward_map.height)
+            for x in range(engine.ward_map.width)
+            if engine.ward_map.walkable(x, y)
+        ]
 
     # ------------------------------------------------------------------
     def draw(self) -> None:
@@ -342,34 +373,48 @@ class WardRenderer:
                 patient.patient_id, patient.patient_id,
             )
 
+    def _advance_background_staff(self) -> None:
+        """Walk each colleague one tile along their errand.
+
+        Presentation only. Destinations come from a renderer-local RNG seeded
+        with a fixed string - never `engine.rng` or any patient stream - so
+        what colleagues do on screen cannot perturb the simulation or the
+        telemetry-versus-routine comparison. It is also why two runs of the
+        same seed still draw identical frames.
+        """
+        ward_map = self.engine.ward_map
+        for role, position in self._staff_at.items():
+            goal = self._staff_goal.get(role)
+            if goal is None or goal == position:
+                goal = self._staff_rng.choice(self._walkable_tiles)
+                self._staff_goal[role] = goal
+
+            step = ward_map.next_step_toward(position, goal)
+            if step is None:
+                # Unreachable, or already there: pick somewhere else next tick.
+                self._staff_goal[role] = None
+                continue
+            # Colleagues do not walk through one another.
+            if step in self._staff_at.values():
+                continue
+            self._staff_at[role] = step
+            self._face(("staff", role), step[0] - position[0], step[1] - position[1])
+
     def _draw_background_staff(self) -> None:
-        """Colleagues drifting around the ward: available staff are visible."""
+        """Colleagues going about the ward: available staff are visible."""
         engine = self.engine
-        anchors = {
-            "hca": (5, 8),
-            "nurse": (18, 8),
-            "doctor": (9, 16),
-            "surgeon": (17, 16),
-            "diabetes": (21, 11),
-        }
+        if self.frame % STAFF_STEP_FRAMES == 0:
+            self._advance_background_staff()
+
         # Staff sprites are drawn from the same coarse availability the agent
         # can observe, not from per-role truth. Rendering exactly which roles
         # are free would show the player something the policy cannot see.
-        visible_roles = list(anchors)[: engine.staff.coarse_availability() + 1]
-        for role, (ax, ay) in anchors.items():
-            if role not in visible_roles:
-                continue
-            # Deterministic drift: `hash` is salted per process for str, which
-            # would make the render non-reproducible between runs.
-            wobble = ((self.frame // 12) + sum(map(ord, role))) % 3 - 1
-            tile_x = ax + wobble
-            if not engine.ward_map.walkable(tile_x, ay):
-                tile_x = ax
-            previous = self._last_seen.get(("staff", role), tile_x)
-            self._last_seen[("staff", role)] = tile_x
-            direction = self._face(("staff", role), tile_x - previous, 0)
+        roles = list(self._staff_at)[: engine.staff.coarse_availability() + 1]
+        for role in roles:
+            x, y = self._staff_at[role]
+            direction = self._facing.get(("staff", role), "down")
             self._blit_person(
-                role, (tile_x * TILE, ay * TILE), direction, self.frame // 6,
+                role, (x * TILE, y * TILE), direction, self.frame // 6,
                 sum(map(ord, role)),
             )
 
@@ -488,7 +533,7 @@ class WardRenderer:
             lines = (
                 ["no active alarms"]
                 if at_station
-                else ["press D to check the board", "(or stand at the station)"]
+                else ["press M to check the board", "(or stand at the station)"]
             )
             for line in lines:
                 self.surface.blit(self.font_small.render(line, True, TEXT_DIM), (x0 + pad, y))

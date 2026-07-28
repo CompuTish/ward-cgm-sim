@@ -19,10 +19,12 @@ from pathlib import Path
 
 import pygame
 
-# On-screen pixels per map tile. Larger than strictly necessary so the canvas
-# is rendered at a high enough native resolution that the browser's upscale
-# does not turn everything to mush.
-TILE = 32
+# On-screen pixels per map tile. The browser stretches the canvas to whatever
+# width the page gives it, so the native resolution sets how much detail
+# survives - at 32 the HUD text was legible only just, and the on-canvas help
+# came out blocky. 48 is 3x the 16px art (still an integer scale) and gives the
+# fonts half again as many pixels. Must stay a multiple of SOURCE_TILE.
+TILE = 48
 
 # The art is authored at 16px and displayed at 2x (integer, nearest-neighbour -
 # any other factor would smear the pixel grid).
@@ -383,37 +385,30 @@ class AssetPack:
     def _characters(self, spec: dict) -> dict:
         self._raw_characters = self._load("characters.png")
         self._character_items = spec["items"]
-        self._patient_cache: dict = {}
-        out = {}
-        for skin in range(self.n_skins):
-            sheet = _recolour(self._raw_characters, self._skin_swaps(skin))
-            for item in spec["items"]:
-                key = (item["character"], item["direction"], item["frame"], skin)
-                out[key] = self._cut(sheet, item)
-        return out
+        return {}  # the cache; filled by frames() on demand
 
-    def patient_frames(self, skin: int, blanket: int) -> dict:
-        """Walking-patient frames whose gown trim matches their bed blanket.
+    def frames(self, character: str, skin: int, blanket=None) -> dict:
+        """Every frame for one character in one colour scheme, built on demand.
 
-        Built on demand rather than up front: 5 skins x 8 blankets x 12 frames
-        would be 480 surfaces to cover the handful of patients who are out of
-        bed at any moment. One recolour pass yields all twelve frames for a
-        combination, and the result is cached for the rest of the shift.
+        Eagerly there are 7 characters x 5 skins x 12 frames before anything is
+        drawn, and the 8 blanket variants multiply the patient again - 900-odd
+        surfaces to put maybe eight people on screen. One recolour pass yields
+        all twelve frames for a combination, cached for the rest of the shift.
         """
-        key = (skin, blanket)
-        frames = self._patient_cache.get(key)
-        if frames is None:
-            sheet = _recolour(
-                self._raw_characters,
-                self._skin_swaps(skin) + self._blanket_swaps(blanket),
-            )
-            frames = {
+        key = (character, skin, blanket)
+        cached = self.characters.get(key)
+        if cached is None:
+            swaps = self._skin_swaps(skin)
+            if blanket is not None:
+                swaps = swaps + self._blanket_swaps(blanket)
+            sheet = _recolour(self._raw_characters, swaps)
+            cached = {
                 (item["direction"], item["frame"]): self._cut(sheet, item)
                 for item in self._character_items
-                if item["character"] == "patient_walking"
+                if item["character"] == character
             }
-            self._patient_cache[key] = frames
-        return frames
+            self.characters[key] = cached
+        return cached
 
     def _patients(self, spec: dict) -> list:
         raw = self._load("patients_in_bed.png")
@@ -503,12 +498,11 @@ class SpriteSheet:
             return self._people[role][phase % 2]
         frame = WALK_CYCLE[phase % len(WALK_CYCLE)]
         character = ROLE_CHARACTERS[role]
-        if blanket is not None and character == "patient_walking":
-            frames = self.pack.patient_frames(
-                skin % self.n_skins, blanket % self.n_blankets
-            )
-            return frames[(direction, frame)]
-        return self.pack.characters[(character, direction, frame, skin % self.n_skins)]
+        # Only patients carry a blanket colour; a nurse has no bedding.
+        tint = blanket % self.n_blankets if (
+            blanket is not None and character == "patient_walking"
+        ) else None
+        return self.pack.frames(character, skin % self.n_skins, tint)[(direction, frame)]
 
     def patient_in_bed(self, skin: int, blanket: int) -> pygame.Surface:
         return self.patients[skin % self.n_skins][blanket % self.n_blankets]

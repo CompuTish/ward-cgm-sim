@@ -478,3 +478,41 @@ def test_colleague_movement_never_touches_the_simulation():
         for p in engine.flow.patients()
     ]
     assert after == patient_states, "rendering disturbed a patient stream"
+
+
+def test_the_published_key_explains_everything_the_ward_can_draw():
+    """The project page carries a key of the artwork.
+
+    A marker the simulator can put on screen but the key never mentions is a
+    marker nobody can interpret, so tie the two together: add an overlay or a
+    character and this fails until it is explained.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "export_legend", REPO_ROOT / "scripts" / "export_legend.py"
+    )
+    legend = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(legend)
+
+    explained_people = {name for name, _slug, _label, _why in legend.PEOPLE}
+    explained_markers = {name for name, _slug, _label, _why in legend.OVERLAYS}
+    assert len(explained_people) == 7 and len(explained_markers) == 11, (
+        "positive control: the key must have been read"
+    )
+
+    sheet = SpriteSheet()
+    from ward_cgm_sim.render.sprites import ROLE_CHARACTERS
+
+    missing_people = set(ROLE_CHARACTERS.values()) - explained_people
+    assert not missing_people, f"characters with no entry in the key: {missing_people}"
+
+    drawable = set(sheet.pack.bed_overlays)
+    assert explained_markers <= drawable, "the key names a marker that does not exist"
+    assert drawable - explained_markers == set(), (
+        f"markers the key never explains: {sorted(drawable - explained_markers)}"
+    )
+
+    # Every alarm the engine can raise has to be in the key, by name.
+    for kind in AlarmKind:
+        assert ALARM_OVERLAYS[kind] in explained_markers, kind

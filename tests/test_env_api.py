@@ -158,3 +158,93 @@ def test_make_env_toggles_the_telemetry_counterfactual():
             break
     on.close()
     off.close()
+
+
+# --------------------------------------------------------------------------
+# Render modes and lifecycle - the public surface a user of the env touches.
+# --------------------------------------------------------------------------
+
+
+def test_render_returns_nothing_when_no_mode_was_asked_for():
+    env = WardCGMTelemetryEnv()
+    env.reset(seed=1)
+    assert env.render() is None
+    env.close()
+
+
+def test_ansi_render_describes_the_ward_in_text():
+    env = WardCGMTelemetryEnv(render_mode="ansi")
+    env.reset(seed=1)
+    text = env.render()
+    assert isinstance(text, str) and text.strip()
+    lowered = text.lower()
+    for expected in ("shift", "beds", "queue", "alarms"):
+        assert expected in lowered, f"the ansi view never mentions {expected}"
+
+
+def test_ansi_render_lists_a_live_alarm():
+    """Positive control included: an empty board would satisfy any 'no alarm'
+    assertion, so drive the ward until one actually fires."""
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    env = WardCGMTelemetryEnv(render_mode="ansi")
+    env.reset(seed=3)
+    engine = env.engine
+    for _ in range(engine.cfg.steps_per_episode - 1):
+        env.step(int(Action.CHECK_DASHBOARD))
+        if engine.visible_alarms():
+            text = env.render()
+            assert "ALARM" in text
+            assert "mmol/L" in text
+            return
+    pytest.skip("no alarm fired in this shift")
+
+
+def test_rgb_array_render_returns_a_frame_of_the_right_shape():
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    env = WardCGMTelemetryEnv(render_mode="rgb_array")
+    env.reset(seed=1)
+    frame = env.render()
+    assert frame.ndim == 3 and frame.shape[2] == 3
+    assert frame.shape[0] > 100 and frame.shape[1] > 100
+    assert len({tuple(p) for row in frame[::11] for p in row[::11]}) > 5, (
+        "the frame came back blank"
+    )
+    env.close()
+
+
+def test_close_is_safe_to_call_twice_and_before_rendering():
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    env = WardCGMTelemetryEnv(render_mode="rgb_array")
+    env.close()
+    env.reset(seed=1)
+    env.render()
+    env.close()
+    env.close()
+
+
+def test_reset_accepts_a_replacement_config_through_options():
+    env = WardCGMTelemetryEnv()
+    env.reset(seed=1, options={"config": SimConfig(telemetry_enabled=False)})
+    assert env.engine.cfg.telemetry_enabled is False
+    assert env.config.telemetry_enabled is False
+
+
+def test_the_same_seed_gives_the_same_episode_and_a_different_one_does_not():
+    def run(seed):
+        env = WardCGMTelemetryEnv()
+        obs, _ = env.reset(seed=seed)
+        rewards = []
+        for action in range(12):
+            _o, reward, _t, _tr, _i = env.step(action % 24)
+            rewards.append(reward)
+        return list(obs), rewards
+
+    first = run(11)
+    assert run(11) == first, "the same seed must replay identically"
+    assert run(12) != first, "different seeds must diverge"

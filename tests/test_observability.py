@@ -390,3 +390,36 @@ def test_dashboard_snapshot_is_not_shown_to_the_next_occupant_of_a_bed():
     assert bed_feature(engine, bed, CGM_INDEX) == UNKNOWN, (
         "the new occupant was shown the previous patient's glucose reading"
     )
+
+
+def test_the_board_stays_dark_in_the_routine_monitoring_arm():
+    """The guard the whole comparison rests on.
+
+    With telemetry off there is no dashboard, so no alarm may ever be visible -
+    not even standing at the nurse station. Running a shift cannot prove this:
+    with telemetry off no alarm is ever *raised*, so "no alarms were visible"
+    is true whether or not the rule exists. Inject one and check the rule
+    itself. Without it the routine-monitoring arm would quietly get the
+    telemetry arm's information and the contrast would mean nothing.
+    """
+    from ward_cgm_sim.core.alarms import Alarm, AlarmKind
+
+    engine = WardEngine(SimConfig(telemetry_enabled=False), seed=2)
+    engine.active_alarms[0] = Alarm(
+        bed=0, kind=AlarmKind.SEVERE_HYPO, raised_step=0, cgm_value=2.8
+    )
+    assert engine.active_alarms, "positive control: an alarm exists to be hidden"
+
+    station = engine.ward_map.station_tiles[0]
+    for tile in ((1, 1), station):
+        engine.agent_x, engine.agent_y = tile
+        assert engine.visible_alarms() == [], f"the board was readable from {tile}"
+
+    engine.dashboard_seen_step = engine.step_index
+    engine.dashboard_alarm_ids = {id(a) for a in engine.active_alarms.values()}
+    assert engine.visible_alarms() == [], "a stale read must not resurrect the board"
+
+    # Positive control: the same alarm IS visible once telemetry is on.
+    engine.cfg = SimConfig(telemetry_enabled=True)
+    engine.agent_x, engine.agent_y = station
+    assert engine.visible_alarms(), "the control arm never sees it either - test is vacuous"

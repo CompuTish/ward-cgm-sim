@@ -288,3 +288,160 @@ def test_the_help_panel_fits_inside_the_canvas(web_main):
     height = font.get_linesize() * len(lines) + 14
     assert widest + 28 <= surface.get_width(), "the help panel is wider than the canvas"
     assert height <= surface.get_height(), "the help panel is taller than the canvas"
+
+
+# --------------------------------------------------------------------------
+# The live readout published to the hosting page
+# --------------------------------------------------------------------------
+
+
+def test_the_published_state_is_json_serialisable(web_main):
+    """It crosses the origin boundary as a JSON string, so it has to encode."""
+    import json
+
+    demo = web_main.Demo()
+    encoded = json.dumps(demo.state())
+    round_tripped = json.loads(encoded)
+    assert round_tripped["type"] == "ward-cgm-sim"
+    assert round_tripped["version"] == 1
+
+
+def test_the_published_state_matches_what_the_canvas_hud_shows(web_main):
+    demo = web_main.Demo()
+    for _ in range(25):
+        demo.advance(demo.agent.act(demo.engine))
+    state = demo.state()
+    engine, flow = demo.engine, demo.engine.flow
+
+    assert state["step"] == engine.step_index
+    assert state["steps"] == demo.config.steps_per_episode
+    assert state["beds"] == flow.occupied_beds
+    assert state["capacity"] == flow.n_beds
+    assert state["free"] == flow.free_beds
+    assert state["queue"] == flow.queue_length
+    assert state["enrolled"] == sum(1 for p in flow.patients() if p.is_enrolled)
+    assert state["staff"] in ("skeleton", "stretched", "comfortable")
+    assert state["lastAction"] == engine.last_action_result
+    assert state["return"] == round(engine.rewards.total, 1)
+
+
+def test_the_clock_matches_the_step_it_was_taken_at(web_main):
+    demo = web_main.Demo()
+    assert demo.state()["clock"] == "07:00"
+    for _ in range(12):  # twelve five-minute steps = one hour
+        demo.advance(web_main.Action.WAIT)
+    assert demo.state()["clock"] == "08:00"
+
+
+def test_the_readout_only_carries_alarms_the_agent_can_already_see(web_main):
+    """The same POMDP boundary the renderer keeps.
+
+    An alarm that has not been seen on the board is not knowledge, and
+    publishing it to the page would hand the viewer a fact the policy has to
+    spend a step acquiring.
+    """
+    demo = web_main.Demo()
+    engine = demo.engine
+    for _ in range(demo.config.steps_per_episode - 1):
+        demo.advance(web_main.Action.CHECK_DASHBOARD)
+        visible = engine.visible_alarms()
+        published = demo.state()["alarms"]
+        assert len(published) == min(8, len(visible))
+        assert {a["bed"] for a in published} <= {a.bed for a in visible}
+        if engine.active_alarms and visible:
+            # Positive control: alarms did exist and were published.
+            assert published
+            return
+    raise AssertionError("no alarm arose in a whole shift; the check was vacuous")
+
+
+def test_no_hidden_clinical_fact_reaches_the_page(web_main):
+    """Whatever else changes, the payload must stay a summary."""
+    demo = web_main.Demo()
+    for _ in range(40):
+        demo.advance(demo.agent.act(demo.engine))
+    allowed = {
+        "type", "version", "clock", "step", "steps", "beds", "capacity", "free",
+        "queue", "enrolled", "staff", "telemetry", "boardRead", "alarms",
+        "watching", "finished", "lastAction", "return",
+    }
+    state = demo.state()
+    assert set(state) == allowed, f"unexpected keys: {set(state) ^ allowed}"
+
+    banned = ("true_glucose", "diabetes", "capacity_to_consent", "insulin",
+              "discharge_stage", "expected_los", "end_of_life", "pregnan")
+    import json
+
+    blob = json.dumps(state).lower()
+    for term in banned:
+        assert term not in blob, f"the readout leaks {term}"
+
+    for alarm in state["alarms"]:
+        assert set(alarm) == {"bed", "kind", "value", "age", "urgent"}
+
+
+def test_the_readout_follows_visible_alarms_exactly(web_main):
+    """One source of truth for what the agent can see.
+
+    The readout deliberately does not re-implement any visibility rule; it
+    republishes `visible_alarms()`. Injecting an alarm the board has not shown
+    proves that, where simply running a shift would not: with telemetry off no
+    alarm is ever raised, so an assertion that none is published passes even if
+    the rule is gone.
+    """
+    from ward_cgm_sim.core.alarms import Alarm, AlarmKind
+
+    demo = web_main.Demo()
+    engine = demo.engine
+    engine.active_alarms[0] = Alarm(
+        bed=0, kind=AlarmKind.HYPO, raised_step=engine.step_index, cgm_value=3.4
+    )
+    # Standing away from the station, with the board never checked, it is
+    # invisible - and so must not be published.
+    engine.dashboard_seen_step = None
+    engine.agent_x, engine.agent_y = 1, 1
+    assert not engine.ward_map.at_station(1, 1), "positive control: away from the board"
+    assert engine.visible_alarms() == []
+    assert demo.state()["alarms"] == []
+
+    # Read the board and the very same alarm becomes publishable.
+    engine.step(int(Action.CHECK_DASHBOARD))
+    assert engine.visible_alarms(), "positive control: the alarm is now on the board"
+    published = demo.state()["alarms"]
+    assert [a["bed"] for a in published] == [a.bed for a in engine.visible_alarms()]
+
+
+def test_telemetry_off_publishes_no_alarms_at_all(web_main):
+    demo = web_main.Demo()
+    demo.handle(key_event(pygame.K_F6))
+    assert demo.config.telemetry_enabled is False
+    for _ in range(60):
+        demo.advance(demo.agent.act(demo.engine))
+        state = demo.state()
+        assert state["telemetry"] is False
+        assert state["alarms"] == []
+
+
+def test_publishing_is_a_no_op_off_the_browser(web_main):
+    """Nothing to post to on a desktop, and it must not raise there."""
+    demo = web_main.Demo()
+    assert demo.publish() is False
+
+
+def test_the_readout_is_addressed_to_one_origin_not_a_wildcard(web_main):
+    """A wildcard target would post the state to whatever framed the demo."""
+    assert web_main.PARENT_ORIGIN == "https://isabelsmith.me"
+    assert web_main.PARENT_ORIGIN.startswith("https://")
+
+    calls = [
+        line.strip()
+        for line in WEB_MAIN.read_text(encoding="utf-8").splitlines()
+        if "postMessage(" in line and not line.strip().startswith("#")
+    ]
+    assert len(calls) == 1, f"expected one postMessage call, found {calls}"
+    assert calls[0].endswith("PARENT_ORIGIN)"), calls[0]
+
+
+def test_the_readout_is_not_published_every_single_frame(web_main):
+    """30 posts a second for numbers that change a few times a second."""
+    assert web_main.PUBLISH_EVERY >= 5

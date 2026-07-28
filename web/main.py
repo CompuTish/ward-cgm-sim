@@ -11,6 +11,8 @@ ACADEMIC MODEL - not clinical decision support.
 """
 
 import asyncio
+import json
+import sys
 
 import pygame
 
@@ -24,6 +26,16 @@ from ward_cgm_sim.render.pygame_renderer import WardRenderer
 # at six steps a second the ward changes faster than a viewer can follow what
 # the nurse is actually doing.
 WATCH_SPEED = 3
+
+# The page that is allowed to receive the readout. Addressed explicitly rather
+# than "*" so the state is never posted to whatever happens to be framing the
+# demo. The demo lives on its own origin deliberately - see the deploy notes -
+# and this one-way channel is the only thing that crosses it.
+PARENT_ORIGIN = "https://isabelsmith.me"
+
+# Frames between readout updates. The simulation advances at most a few times a
+# second, so posting every frame would be 30x the traffic for no new numbers.
+PUBLISH_EVERY = 10
 
 KEY_ACTIONS = {
     pygame.K_UP: Action.MOVE_UP,
@@ -107,6 +119,76 @@ class Demo:
             self.watching = False
             self.advance(KEY_ACTIONS[event.key])
 
+    def state(self) -> dict:
+        """The readout, as data, for the page hosting the demo.
+
+        This mirrors exactly what `_draw_hud` already paints inside the canvas
+        and adds nothing: the same counts, the same coarse staff summary, and
+        only the alarms `visible_alarms()` returns. Publishing anything the HUD
+        does not show would hand the viewer a fact the policy has to spend a
+        step learning, which is the same POMDP boundary the renderer observes.
+        """
+        engine = self.engine
+        cfg = engine.cfg
+        flow = engine.flow
+        minutes = engine.step_index * cfg.minutes_per_step
+        staff_words = ("skeleton", "stretched", "comfortable")
+
+        # `visible_alarms()` is the single source of truth for what the agent
+        # can see - it already returns nothing when telemetry is off, and
+        # nothing off-station that has not been looked at. Re-checking any of
+        # that here would just be a second copy of the rule, free to drift.
+        alarms = [
+            {
+                "bed": alarm.bed,
+                "kind": alarm.kind.value,
+                "value": round(alarm.cgm_value, 1),
+                "age": alarm.age(engine.step_index),
+                "urgent": bool(alarm.is_urgent),
+            }
+            for alarm in engine.visible_alarms()[:8]
+        ]
+
+        return {
+            "type": "ward-cgm-sim",
+            "version": 1,
+            "clock": f"{7 + minutes // 60:02d}:{minutes % 60:02d}",
+            "step": engine.step_index,
+            "steps": cfg.steps_per_episode,
+            "beds": flow.occupied_beds,
+            "capacity": flow.n_beds,
+            "free": flow.free_beds,
+            "queue": flow.queue_length,
+            "enrolled": sum(1 for p in flow.patients() if p.is_enrolled),
+            "staff": staff_words[engine.staff.coarse_availability()],
+            "telemetry": bool(cfg.telemetry_enabled),
+            "boardRead": bool(engine.ward_map.at_station(engine.agent_x, engine.agent_y)),
+            "alarms": alarms,
+            "watching": bool(self.watching),
+            "finished": bool(self.finished),
+            "lastAction": engine.last_action_result,
+            "return": round(engine.rewards.total, 1),
+        }
+
+    def publish(self) -> bool:
+        """Send the readout to the hosting page. False when there is nowhere to send it.
+
+        The demo is served from its own origin on purpose, so the page cannot
+        reach into this frame - a one-way postMessage is the whole channel, and
+        it is addressed to a single origin rather than "*". Any failure is
+        swallowed: the canvas HUD is still there, so a page that never receives
+        anything simply shows nothing extra.
+        """
+        if sys.platform != "emscripten":
+            return False
+        try:
+            import platform as _platform
+
+            _platform.window.parent.postMessage(json.dumps(self.state()), PARENT_ORIGIN)
+            return True
+        except Exception:  # pragma: no cover - browser-only path
+            return False
+
     def hint_lines(self) -> list[str]:
         """The on-screen help, as text.
 
@@ -172,6 +254,9 @@ async def main() -> None:
         demo.renderer.draw()
         demo.draw_overlay()
         demo.renderer.flip()
+
+        if demo.frame % PUBLISH_EVERY == 0:
+            demo.publish()
 
         clock.tick(30)
         # Yielding here is what lets the browser stay responsive; pygbag
